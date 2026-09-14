@@ -22,7 +22,8 @@ import {
   uudenPaikanHinta as laskeUudenPaikanHinta,
   hintaKentalle as laskeHintaKentalle,
   hintaKenttaMatkustajaPaikka as laskeHintaKenttaMatkustajaPaikka,
-  laskeReitinTiedot
+  laskeReitinTiedot,
+  tarvittavaXpTasonNostoon
 } from '../shared/gameData'
 
 const router = useRouter()
@@ -41,6 +42,14 @@ let leaderboardInterval: any = null
 // Pelin tila (Palvelimen auktoriteetti)
 const rahat = ref(100)
 const kulta = ref(0)
+const taso = ref(1)
+const xp = ref(0)
+const tasonMaksimiXp = computed(() => tarvittavaXpTasonNostoon(taso.value))
+const xpProsentti = computed(() => {
+  const max = tasonMaksimiXp.value
+  if (!max || max <= 0) return 0
+  return Math.min(100, Math.max(0, Math.round((xp.value / max) * 100)))
+})
 const kultaIlmoitus = ref("")
 const tallennusIlmoitus = ref("")
 const hataapuCooldown = ref(0)
@@ -78,6 +87,8 @@ const paivitaTila = (state: any) => {
   if (!state) return
   rahat.value = state.rahat ?? 100
   kulta.value = state.kulta ?? 0
+  taso.value = state.taso ?? 1
+  xp.value = state.xp ?? 0
   maksimiKonePaikat.value = state.maksimiKonePaikat ?? 4
   hataapuCooldown.value = state.hataapuCooldownJaljella ?? 0
   avatutKentat.value = state.avatutKentat || {}
@@ -436,6 +447,7 @@ onUnmounted(() => {
       <div v-if="tallennusIlmoitus" class="tallennus-pop">{{ tallennusIlmoitus }}</div>
       <div v-if="kultaIlmoitus" class="kulta-pop">{{ kultaIlmoitus }}</div>
       <div class="ajastin">
+        ⭐ Taso: <strong>{{ taso }}</strong> | 
         Hangaari: <strong>{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</strong> | 
         Seuraava päivitys: <strong>{{ muotoileAika(aikaSeuraavaanPaivitykseen) }}</strong>
       </div>
@@ -530,6 +542,10 @@ onUnmounted(() => {
           <li>
             <div class="lista-otsikko">🟡 Kerätyt kullat</div>
             <div class="lista-info stats-arvo kulta-teksti">{{ tilastot.keratytKullat }} kultaa</div>
+          </li>
+          <li>
+            <div class="lista-otsikko">⭐ Taso ja kokemus</div>
+            <div class="lista-info stats-arvo taso-arvo">Taso {{ taso }} ({{ xp.toLocaleString() }} / {{ tasonMaksimiXp.toLocaleString() }} XP)</div>
           </li>
           <li>
             <div class="lista-otsikko">🔨 Rakennetut koneet</div>
@@ -821,6 +837,7 @@ onUnmounted(() => {
               <div class="pelaaja-tiedot">
                 <div class="pelaaja-otsikkorivi">
                   <span class="lista-otsikko">{{ tulos.pelaajanNimi || tulos.pelaajan_nimi || 'Pelaaja' }}</span>
+                  <span class="taso-tagi">⭐ Taso {{ tulos.taso || 1 }}</span>
                   <span v-if="(tulos.userId || tulos.user_id) === kayttaja?.id" class="sina-tagi">Sinä</span>
                 </div>
 
@@ -845,6 +862,7 @@ onUnmounted(() => {
 
                 <!-- Täydet osatilastot pikkulappuina -->
                 <div class="mini-tilastot">
+                  <span class="stat-badge taso-badge" title="Taso">⭐ Taso {{ tulos.taso || 1 }}</span>
                   <span class="stat-badge" title="Kassavarat">💰 {{ tulos.rahat }} €</span>
                   <span class="stat-badge" title="Omistetut koneet">✈️ {{ tulos.koneet }}</span>
                   <span class="stat-badge" title="Tehdyt lennot">🛫 {{ tulos.lennot }}</span>
@@ -864,6 +882,26 @@ onUnmounted(() => {
         </div>
 
         <button class="sulje-modal" @click="suljeLeaderboard">Sulje</button>
+      </div>
+    </div>
+
+    <!-- SININEN XP-PALKKI JA TASO ALAKULMASSA -->
+    <div class="xp-widget-alakulma" title="Kokemustaso ja eteneminen seuraavalle tasolle">
+      <div class="xp-widget-sisus">
+        <div class="xp-otsikkorivi">
+          <div class="xp-taso-otsikko">
+            <span class="xp-tahti">⭐</span>
+            <span class="xp-taso-teksti">Taso {{ taso }}</span>
+          </div>
+          <span class="xp-arvo-teksti">{{ xp.toLocaleString() }} / {{ tasonMaksimiXp.toLocaleString() }} XP</span>
+        </div>
+        <div class="xp-kisko">
+          <div class="xp-tayte" :style="{ width: xpProsentti + '%' }"></div>
+        </div>
+        <div class="xp-alarivi">
+          <span>Seuraava taso: {{ xpProsentti }}%</span>
+          <span class="xp-puuttuu">Puuttuu {{ Math.max(0, tasonMaksimiXp - xp).toLocaleString() }} XP</span>
+        </div>
       </div>
     </div>
 
@@ -1233,6 +1271,118 @@ h2 { font-size: 1.2rem; color: #aaaaaa; margin-top: 30px; margin-bottom: 10px; }
   border-radius: 4px;
   font-size: 0.75rem;
   color: #a0b2c6;
+}
+
+/* SIVUN ALAKULMAN XP-PALKKI JA TYYLIT */
+.xp-widget-alakulma {
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  width: 280px;
+  max-width: calc(100vw - 120px);
+  background: rgba(18, 26, 36, 0.92);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 180, 255, 0.3);
+  border-radius: 12px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 150, 255, 0.15);
+  z-index: 900;
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+
+.xp-widget-alakulma:hover {
+  transform: translateY(-2px);
+  border-color: rgba(0, 210, 255, 0.6);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 210, 255, 0.25);
+}
+
+.xp-widget-sisus {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xp-otsikkorivi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.xp-taso-otsikko {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.xp-tahti {
+  font-size: 1.05rem;
+}
+
+.xp-taso-teksti {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #64b5f6;
+}
+
+.xp-arvo-teksti {
+  font-size: 0.8rem;
+  color: #90caf9;
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.xp-kisko {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  background: #0d1b2a;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid #1b3a5c;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
+}
+
+.xp-tayte {
+  height: 100%;
+  background: linear-gradient(90deg, #1976d2, #00b0ff, #00e5ff);
+  box-shadow: 0 0 10px rgba(0, 229, 255, 0.6);
+  border-radius: 6px;
+  transition: width 0.4s ease-out;
+}
+
+.xp-alarivi {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #78909c;
+}
+
+.xp-puuttuu {
+  color: #90a4ae;
+}
+
+.taso-tagi {
+  background: #102a45;
+  color: #64b5f6;
+  border: 1px solid #1976d2;
+  font-size: 0.75rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: 6px;
+}
+
+.stat-badge.taso-badge {
+  background: #0d233a;
+  border-color: #1976d2;
+  color: #90caf9;
+  font-weight: 600;
+}
+
+.taso-arvo {
+  color: #64b5f6 !important;
+  font-weight: bold;
 }
 
 </style>

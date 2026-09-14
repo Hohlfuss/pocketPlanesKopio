@@ -20,7 +20,9 @@ import {
   hintaTilavuus,
   uudenPaikanHinta,
   laskeReitinTiedot,
-  laskeOsanHinta
+  laskeOsanHinta,
+  tarvittavaXpTasonNostoon,
+  laskeTasoPalkinto
 } from './gameData'
 
 export function generoiKaupanOsat(count = 4): Osa[] {
@@ -177,6 +179,8 @@ export function luoAlkutila(userId: string, username: string): GameState {
     pelaajanNimi: username || 'Pelaaja',
     rahat: 100,
     kulta: 0,
+    taso: 1,
+    xp: 0,
     maksimiKonePaikat: 4,
     lastHataapuClaimedAt: 0,
     hataapuCooldownJaljella: 0,
@@ -209,6 +213,10 @@ export function luoAlkutila(userId: string, username: string): GameState {
  */
 export function tickGameState(state: GameState, nowMs = Date.now()): { state: GameState, events: string[] } {
   const events: string[] = []
+
+  // Varmistetaan tason ja xp:n alustus
+  if (typeof state.taso !== 'number' || state.taso < 1) state.taso = 1
+  if (typeof state.xp !== 'number' || state.xp < 0) state.xp = 0
 
   // 1. Hätäapujäähy
   const cooldownEnd = (state.lastHataapuClaimedAt || 0) + 180000
@@ -293,8 +301,23 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
         state.tilastot.keratytKullat += lennonKulta
       }
 
+      // XP ja tason nousu lennon pituuden mukaan
+      const lennonXp = Math.max(10, Math.round(kone.currentLegDistance || 100))
+      state.xp = (state.xp || 0) + lennonXp
+
+      let tarvittava = tarvittavaXpTasonNostoon(state.taso)
+      while (state.xp >= tarvittava) {
+        state.xp -= tarvittava
+        state.taso++
+        const palkintoKulta = laskeTasoPalkinto(state.taso)
+        state.kulta += palkintoKulta
+        state.tilastot.keratytKullat += palkintoKulta
+        events.push(`🎉 TASON NOUSU! Saavutit tason ${state.taso}! Palkinto: +${palkintoKulta} kultaa ⭐`)
+        tarvittava = tarvittavaXpTasonNostoon(state.taso)
+      }
+
       events.push(
-        `Kone ${kone.nimi} saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''}.`
+        `Kone ${kone.nimi} saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''} (+${lennonXp} XP).`
       )
 
       // Siirrytään reitillä eteenpäin
@@ -311,6 +334,7 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
         kone.departedAt = edellinenArrival
         kone.arrivalAt = edellinenArrival + (kestoSek * 1000)
         kone.legDurationSeconds = kestoSek
+        kone.currentLegDistance = matka
       } else {
         // Reitti päättynyt -> kone maahan
         kone.tila = "Maassa"
@@ -320,6 +344,7 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
         kone.departedAt = null
         kone.arrivalAt = null
         kone.lentoAikaJaljella = 0
+        kone.currentLegDistance = undefined
       }
     }
 
@@ -643,6 +668,7 @@ export function suoritaToiminto(
       kone.arrivalAt = nowMs + (kestoSek * 1000)
       kone.legDurationSeconds = kestoSek
       kone.lentoAikaJaljella = kestoSek
+      kone.currentLegDistance = ekaMatka
 
       return {
         success: true,

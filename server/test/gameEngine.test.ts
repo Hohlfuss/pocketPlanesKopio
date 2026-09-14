@@ -111,3 +111,41 @@ test('Osien hinnoittelu: kehittyneempien koneiden osat ovat kalliimpia', async (
   assert.ok(b737Hinta < concordeHinta, 'Boeing 737 pitää olla halvempi kuin Concorde')
 })
 
+test('Tasojärjestelmä: pelaaja aloittaa tasolta 1, kerää XP:tä lennoista ja saa kultaa tason noustessa', async () => {
+  const { tarvittavaXpTasonNostoon, laskeTasoPalkinto } = await import('../game/gameData')
+  const state = luoAlkutila('test-user-level', 'LevelPilot')
+
+  assert.equal(state.taso, 1, 'Pelaajan tulee aloittaa tasolta 1')
+  assert.equal(state.xp, 0, 'Pelaajan tulee aloittaa 0 XP:llä')
+
+  const kone = state.lentokoneet[0]
+  const now = 2000000
+
+  // Lähetetään kone lennolle Pirkkala -> Pori
+  suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Pori'] }, now)
+  const arrivalTime = kone.arrivalAt!
+
+  // Kone saapuu
+  const { events } = tickGameState(state, arrivalTime + 1000)
+  assert.ok(state.xp > 0, 'Pelaajan tulisi saada XP:tä lennosta')
+  assert.equal(state.taso, 1, 'Yksi lyhyt lento ei vielä riitä tason nostoon')
+
+  // Simuloidaan lisää XP:tä niin että taso nousee
+  const xpTarve1 = tarvittavaXpTasonNostoon(1)
+  const kultaEnnen = state.kulta
+
+  // Asetetaan kone uudelle pitkälle lennolle tai asetetaan xp juuri alle kynnyksen
+  state.xp = xpTarve1 - 10
+  kone.sijainti = 'Pori'
+  kone.tila = 'Maassa'
+
+  suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Helsinki'] }, arrivalTime + 2000)
+  const arrivalTime2 = kone.arrivalAt!
+
+  const { events: events2 } = tickGameState(state, arrivalTime2 + 1000)
+  assert.equal(state.taso, 2, 'Pelaajan tulisi nousta tasolle 2 kun tarvittava XP saavutetaan')
+  const odotettuPalkinto = laskeTasoPalkinto(2)
+  assert.equal(state.kulta, kultaEnnen + odotettuPalkinto, 'Tason noususta pitää saada kultapalkinto')
+  assert.ok(events2.some(e => e.includes('TASON NOUSU')), 'Tapahtumalokissa tulee näkyä tason nousu')
+})
+

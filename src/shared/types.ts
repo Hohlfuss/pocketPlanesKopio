@@ -32,6 +32,7 @@ export interface Lentokone {
   nopeusTaso: number
   kulutusTaso: number
   tilavuusTaso: number
+  currentLegDistance?: number
 }
 
 export interface KenttaData {
@@ -78,6 +79,8 @@ export interface GameState {
   pelaajanNimi: string
   rahat: number
   kulta: number
+  taso: number
+  xp: number
   maksimiKonePaikat: number
   lastHataapuClaimedAt: number
   hataapuCooldownJaljella: number
@@ -124,5 +127,6 @@ export interface LeaderboardEntry {
   lennot: number
   matkustajat: number
   kentat?: number
+  taso?: number
   updatedAt?: string
 }

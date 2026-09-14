@@ -107,6 +107,12 @@ export async function loadGameState(userId: string, username: string, token?: st
       state.pelaajanNimi = username || state.pelaajanNimi || 'Pelaaja'
 
       // Varmistetaan uudet kentät, jos kyseessä on vanha tallenne
+      if (typeof state.taso !== 'number' || state.taso < 1) {
+        state.taso = 1
+      }
+      if (typeof state.xp !== 'number' || state.xp < 0) {
+        state.xp = 0
+      }
       if (typeof state.lastHataapuClaimedAt !== 'number') {
         state.lastHataapuClaimedAt = 0
       }
@@ -181,6 +187,7 @@ export async function updateLeaderboardEntry(state: GameState, token?: string): 
     lennot: state.tilastot?.tehdytLennot ?? 0,
     matkustajat: state.tilastot?.kuljetutMatkustajat ?? 0,
     kentat: state.avatutKentat ? Object.keys(state.avatutKentat).length : 0,
+    taso: state.taso || 1,
     updatedAt: new Date().toISOString()
   }
 
@@ -202,6 +209,7 @@ export async function updateLeaderboardEntry(state: GameState, token?: string): 
         lentokoneet: entry.koneet,
         lennot: entry.lennot,
         matkustajat: entry.matkustajat,
+        taso: entry.taso,
         updated_at: entry.updatedAt
       }, { onConflict: 'user_id' })
 

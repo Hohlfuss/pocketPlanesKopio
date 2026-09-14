@@ -213,8 +213,8 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
   const cooldownEnd = (state.lastHataapuClaimedAt || 0) + 180000
   state.hataapuCooldownJaljella = Math.max(0, Math.ceil((cooldownEnd - nowMs) / 1000))
 
-  // 2. Matkustajien ja osien päivitysjakso (300 s / 5 min)
-  const refreshIntervalMs = 300000
+  // 2. Matkustajien ja osien päivitysjakso (180 s / 3 min)
+  const refreshIntervalMs = 180000
   if (!state.lastPassengerRefreshAt) {
     state.lastPassengerRefreshAt = nowMs
   }

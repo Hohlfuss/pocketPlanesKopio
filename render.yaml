@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: pocketplanes
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        value: https://xalwsdeeujyhoqygcoul.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_r6j0Nf2Y0ndCMqZyzgtVVQ_J1OKjsCv
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false # Aseta tämä Renderin dashboardissa Environment Variables -kohdassa

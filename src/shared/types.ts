@@ -118,7 +118,9 @@ export interface LeaderboardEntry {
   pelaajanNimi: string
   rahat: number
   kulta: number
-  tehdytLennot: number
-  kuljetutMatkustajat: number
-  updatedAt: string
+  koneet: number
+  lennot: number
+  matkustajat: number
+  kentat?: number
+  updatedAt?: string
 }

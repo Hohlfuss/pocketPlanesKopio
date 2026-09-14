@@ -14,12 +14,13 @@ gameRouter.get('/state', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!
     const username = req.username!
-    const state = await loadGameState(userId, username)
+    const token = req.token
+    const state = await loadGameState(userId, username, token)
     const { events } = tickGameState(state)
 
     // Tallennetaan taustalla vain jos tapahtumia tai lennon tiloja muuttui
     if (events.length > 0) {
-      await saveGameState(state)
+      await saveGameState(state, token)
     }
 
     res.json({ state, events })
@@ -34,13 +35,14 @@ gameRouter.post('/action', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.userId!
     const username = req.username!
+    const token = req.token
     const { action, payload } = req.body
 
     if (!action) {
       return res.status(400).json({ error: 'Toiminto puuttuu' })
     }
 
-    const state = await loadGameState(userId, username)
+    const state = await loadGameState(userId, username, token)
     const result = suoritaToiminto(state, action, payload)
 
     if (!result.success) {
@@ -52,7 +54,7 @@ gameRouter.post('/action', async (req: AuthenticatedRequest, res: Response) => {
     }
 
     // Tallennetaan onnistunut toiminto
-    await saveGameState(result.state)
+    await saveGameState(result.state, token)
 
     res.json({
       success: true,

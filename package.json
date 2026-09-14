@@ -9,7 +9,7 @@
     "server": "tsx server/index.ts",
     "server:dev": "tsx watch server/index.ts",
     "build": "vue-tsc -b && vite build",
-    "test": "tsx server/test/gameEngine.test.ts",
+    "test": "tsx --test server/test/gameEngine.test.ts server/test/leaderboard.test.ts",
     "start": "tsx server/index.ts",
     "preview": "vite preview",
     "deploy": "gh-pages -d dist"

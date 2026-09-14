@@ -41,8 +41,8 @@ export async function sendGameAction(action: string, payload?: any) {
   return data
 }
 
-export async function fetchLeaderboard() {
-  const res = await fetch('/api/leaderboard')
+export async function fetchLeaderboard(sortBy: string = 'rahat') {
+  const res = await fetch(`/api/leaderboard?sortBy=${encodeURIComponent(sortBy)}`)
   if (!res.ok) {
     throw new Error('Tulostaulun haku epäonnistui')
   }

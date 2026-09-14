@@ -13,6 +13,7 @@ export const supabaseAdmin = createClient(supabaseUrl, supabaseKey)
 export interface AuthenticatedRequest extends Request {
   userId?: string
   username?: string
+  token?: string
 }
 
 export async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
@@ -30,6 +31,7 @@ export async function requireAuth(req: AuthenticatedRequest, res: Response, next
     }
 
     req.userId = user.id
+    req.token = token
 
     // Haetaan käyttäjänimi profiles-taulusta
     const { data: profile } = await supabaseAdmin

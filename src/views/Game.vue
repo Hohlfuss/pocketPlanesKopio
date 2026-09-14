@@ -10,7 +10,8 @@ import type {
   Osa,
   OsaTyyppi,
   OstettavaKentta,
-  Piirustus
+  Piirustus,
+  LeaderboardEntry
 } from '../shared/types'
 import {
   rakennettavatMallit,
@@ -32,7 +33,10 @@ const pelaajanNimi = ref("")
 
 // Leaderboard
 const leaderboardAuki = ref(false)
-const leaderboardData = ref<any[]>([])
+const leaderboardLataus = ref(false)
+const leaderboardData = ref<LeaderboardEntry[]>([])
+const leaderboardLajittelu = ref<'rahat' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta'>('rahat')
+let leaderboardInterval: any = null
 
 // Pelin tila (Palvelimen auktoriteetti)
 const rahat = ref(100)
@@ -217,20 +221,42 @@ const kirjauduUlos = async () => {
   router.push({ name: 'login' })
 }
 
-const haeLeaderboard = async () => {
-  leaderboardData.value = []
+const haeLeaderboard = async (naytaLataus = false) => {
+  if (naytaLataus && leaderboardData.value.length === 0) {
+    leaderboardLataus.value = true
+  }
   try {
-    const data = await fetchLeaderboard()
+    const data = await fetchLeaderboard(leaderboardLajittelu.value)
     leaderboardData.value = data
   } catch (err: any) {
     console.error('Tulostaulun haku epäonnistui:', err)
+  } finally {
+    leaderboardLataus.value = false
   }
 }
 
-const tallennaTuloksetPilveen = () => {
-  haeLeaderboard()
-  tallennusIlmoitus.value = "Tulostaulu päivitetty palvelimelta!"
-  setTimeout(() => { tallennusIlmoitus.value = "" }, 3000)
+const vaihdaLeaderboardLajittelu = (uusiLajittelu: 'rahat' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta') => {
+  leaderboardLajittelu.value = uusiLajittelu
+  haeLeaderboard(true)
+}
+
+const avaaLeaderboard = () => {
+  leaderboardAuki.value = true
+  haeLeaderboard(true)
+  if (leaderboardInterval) clearInterval(leaderboardInterval)
+  leaderboardInterval = setInterval(() => {
+    if (leaderboardAuki.value) {
+      haeLeaderboard(false)
+    }
+  }, 10000)
+}
+
+const suljeLeaderboard = () => {
+  leaderboardAuki.value = false
+  if (leaderboardInterval) {
+    clearInterval(leaderboardInterval)
+    leaderboardInterval = null
+  }
 }
 
 // Navigointi ja valinnat
@@ -380,6 +406,7 @@ onMounted(async () => {
 onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
   if (syncTimer) clearInterval(syncTimer)
+  if (leaderboardInterval) clearInterval(leaderboardInterval)
 })
 </script>
 
@@ -418,7 +445,7 @@ onUnmounted(() => {
     <div class="yla-napit-rivi">
       <button class="mini-nappi cloud-save-nappi" @click="tallennaPeliPilveen">☁️ Tallenna peli</button>
       <button class="mini-nappi cloud-nappi" @click="kirjauduUlos">🚪 Ulos ({{ pelaajanNimi || 'Pelaaja' }})</button>
-      <button class="mini-nappi trophy-nappi" @click="leaderboardAuki = true; haeLeaderboard()">🏆 Tulostaulu</button>
+      <button class="mini-nappi trophy-nappi" @click="avaaLeaderboard">🏆 Tulostaulu</button>
     </div>
 
     <!-- HÄTÄAPUNAPPI (Näkyy päävalikossa) -->
@@ -712,31 +739,116 @@ onUnmounted(() => {
     </div>
 
     <!-- LEADERBOARD (TULOSTAULU) -->
-<div v-if="leaderboardAuki" class="modal-overlay">
-  <div class="modal-content leaderboard-modal">
-    <h1>🏆 Maailman Rikkaimmat Lentoyhtiöt</h1>
-    
-    <button class="cloud-tallenna-nappi" @click="tallennaTuloksetPilveen">
-      ☁️ Lähetä omat tulokset pilveen
-    </button>
-
-    <ul class="lista leaderboard-lista">
-      <li v-for="(tulos, index) in leaderboardData" :key="index" class="leaderboard-rivi">
-        <div class="sija">#{{ index + 1 }}</div>
-        <div class="pelaaja-tiedot">
-            <div class="lista-otsikko">{{ tulos.pelaajan_nimi }}</div>
-           <div class="lista-info">
-              💰 <span class="tulo-teksti">{{ tulos.rahat }} €</span> | 
-             🟡 <span class="kulta-teksti">{{ tulos.kulta }} Kultaa</span>
+    <div v-if="leaderboardAuki" class="modal-overlay" @click.self="suljeLeaderboard">
+      <div class="modal-content leaderboard-modal">
+        <div class="leaderboard-header">
+          <div class="leaderboard-otsikko-alue">
+            <h2>🏆 Lentoyhtiöiden Tulostaulu</h2>
+            <div class="live-indikaattori">
+              <span class="pulse-dot"></span>
+              <span>Reaaliaikainen päivitys aktiivinen</span>
             </div>
-         </div>
-        </li>
-       <li v-if="leaderboardData.length === 0" class="tyhja-lista">Tulostaulua ladataan...</li>
-      </ul>
+          </div>
+          <button class="sulje-risti" @click="suljeLeaderboard">✕</button>
+        </div>
 
-      <button class="sulje-modal" @click="leaderboardAuki = false">Sulje</button>
+        <!-- KATEGORIAPAINIKKEET -->
+        <div class="leaderboard-kategoriat">
+          <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'rahat' }]"
+            @click="vaihdaLeaderboardLajittelu('rahat')"
+          >
+            💰 Kassavarat
+          </button>
+          <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'koneet' }]"
+            @click="vaihdaLeaderboardLajittelu('koneet')"
+          >
+            ✈️ Laivasto
+          </button>
+          <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'lennot' }]"
+            @click="vaihdaLeaderboardLajittelu('lennot')"
+          >
+            🛫 Lennot
+          </button>
+          <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'matkustajat' }]"
+            @click="vaihdaLeaderboardLajittelu('matkustajat')"
+          >
+            👥 Matkustajat
+          </button>
+          <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'kulta' }]"
+            @click="vaihdaLeaderboardLajittelu('kulta')"
+          >
+            🟡 Kulta
+          </button>
+        </div>
+
+        <!-- TULOSTAULUN LISTA -->
+        <div class="leaderboard-lista-wrapper">
+          <ul class="lista leaderboard-lista">
+            <li
+              v-for="(tulos, index) in leaderboardData"
+              :key="tulos.userId || index"
+              :class="['leaderboard-rivi', { 'oma-rivi': tulos.userId === kayttaja?.id }]"
+            >
+              <div class="sija">
+                <span v-if="index === 0" class="mitali mitali-kulta" title="1. Sija">🥇</span>
+                <span v-else-if="index === 1" class="mitali mitali-hopea" title="2. Sija">🥈</span>
+                <span v-else-if="index === 2" class="mitali mitali-pronssi" title="3. Sija">🥉</span>
+                <span v-else class="sija-numero">#{{ index + 1 }}</span>
+              </div>
+
+              <div class="pelaaja-tiedot">
+                <div class="pelaaja-otsikkorivi">
+                  <span class="lista-otsikko">{{ tulos.pelaajanNimi }}</span>
+                  <span v-if="tulos.userId === kayttaja?.id" class="sina-tagi">Sinä</span>
+                </div>
+
+                <!-- Korostettu päämittari valitun kategorian mukaan -->
+                <div class="paamittari-rivi">
+                  <span v-if="leaderboardLajittelu === 'rahat'" class="paamittari rahat">
+                    💰 {{ Number(tulos.rahat).toLocaleString() }} €
+                  </span>
+                  <span v-else-if="leaderboardLajittelu === 'koneet'" class="paamittari koneet">
+                    ✈️ {{ tulos.koneet }} lentokonetta
+                  </span>
+                  <span v-else-if="leaderboardLajittelu === 'lennot'" class="paamittari lennot">
+                    🛫 {{ tulos.lennot }} lentoa
+                  </span>
+                  <span v-else-if="leaderboardLajittelu === 'matkustajat'" class="paamittari matkustajat">
+                    👥 {{ tulos.matkustajat }} matkustajaa
+                  </span>
+                  <span v-else-if="leaderboardLajittelu === 'kulta'" class="paamittari kulta">
+                    🟡 {{ tulos.kulta }} kultaa
+                  </span>
+                </div>
+
+                <!-- Täydet osatilastot pikkulappuina -->
+                <div class="mini-tilastot">
+                  <span class="stat-badge" title="Kassavarat">💰 {{ tulos.rahat }} €</span>
+                  <span class="stat-badge" title="Omistetut koneet">✈️ {{ tulos.koneet }}</span>
+                  <span class="stat-badge" title="Tehdyt lennot">🛫 {{ tulos.lennot }}</span>
+                  <span class="stat-badge" title="Kuljetetut matkustajat">👥 {{ tulos.matkustajat }}</span>
+                  <span class="stat-badge" title="Kultavarat">🟡 {{ tulos.kulta }}</span>
+                </div>
+              </div>
+            </li>
+
+            <li v-if="leaderboardLataus && leaderboardData.length === 0" class="tyhja-lista">
+              Ladataan tulostaulua...
+            </li>
+            <li v-else-if="!leaderboardLataus && leaderboardData.length === 0" class="tyhja-lista">
+              Ei vielä pelaajatuloksia.
+            </li>
+          </ul>
+        </div>
+
+        <button class="sulje-modal" @click="suljeLeaderboard">Sulje</button>
+      </div>
     </div>
-  </div>
 
     <!-- TAKAISIN-NAPPI -->
     <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
@@ -895,13 +1007,215 @@ h2 { font-size: 1.2rem; color: #aaaaaa; margin-top: 30px; margin-bottom: 10px; }
 .sulje-modal { margin-top: 25px; background: transparent; color: #888; border: 1px solid #555; padding: 8px 15px; border-radius: 6px; cursor: pointer; }
 .sulje-modal:hover { background: #333; color: #fff; }
 
-.leaderboard-modal { max-width: 500px; }
-.cloud-tallenna-nappi { width: 100%; background: #2980b9; color: white; border: none; padding: 12px; border-radius: 6px; font-weight: bold; font-size: 1.05rem; cursor: pointer; margin-bottom: 20px; }
-.cloud-tallenna-nappi:hover { background: #3498db; }
+.leaderboard-modal {
+  max-width: 620px;
+  width: 95%;
+  background: #151d28;
+  border: 1px solid #2c3e50;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
+}
 
-.leaderboard-lista { max-height: 400px; overflow-y: auto; text-align: left; }
-.leaderboard-rivi { display: flex; align-items: center; gap: 15px; background: #121c26 !important; border-left: 4px solid #d4af37 !important; }
-.leaderboard-rivi:hover { background: #1c2a38 !important; border-color: #d4af37 !important; }
-.sija { font-size: 1.5rem; font-weight: bold; color: #d4af37; width: 40px; text-align: center; }
-.pelaaja-tiedot { flex: 1; }
+.leaderboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.leaderboard-otsikko-alue h2 {
+  margin: 0 0 6px 0;
+  font-size: 1.4rem;
+  color: #fff;
+}
+
+.live-indikaattori {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #4caf50;
+}
+
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #4caf50;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #4caf50;
+  animation: pulseAnimation 2s infinite ease-in-out;
+}
+
+@keyframes pulseAnimation {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.7; }
+}
+
+.sulje-risti {
+  background: transparent;
+  border: none;
+  color: #888;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.sulje-risti:hover {
+  color: #fff;
+  background: #223040;
+}
+
+.leaderboard-kategoriat {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.kategoria-nappi {
+  flex: 1 1 calc(20% - 8px);
+  min-width: 95px;
+  padding: 8px 10px;
+  background: #1f2a38;
+  border: 1px solid #2e3e52;
+  border-radius: 6px;
+  color: #b0c4de;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.kategoria-nappi:hover {
+  background: #2a3a4d;
+  color: #fff;
+  border-color: #4a6582;
+}
+
+.kategoria-nappi.aktiivinen {
+  background: linear-gradient(135deg, #2b4c7e 0%, #1e3557 100%);
+  color: #ffd54f;
+  border-color: #ffd54f;
+  box-shadow: 0 0 10px rgba(255, 213, 79, 0.25);
+}
+
+.leaderboard-lista-wrapper {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.leaderboard-lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.leaderboard-rivi {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: #182330 !important;
+  border: 1px solid #27374a;
+  border-left: 4px solid #4a6582 !important;
+  border-radius: 8px;
+  transition: transform 0.15s, border-color 0.15s;
+}
+
+.leaderboard-rivi:hover {
+  transform: translateY(-2px);
+  border-color: #5c7e9f;
+  background: #1e2c3c !important;
+}
+
+.leaderboard-rivi.oma-rivi {
+  border-left: 4px solid #ffd54f !important;
+  border-color: #ffd54f;
+  background: linear-gradient(90deg, #1b2838 0%, #1a2533 100%) !important;
+  box-shadow: 0 0 12px rgba(255, 213, 79, 0.15);
+}
+
+.sija {
+  min-width: 44px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.mitali {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.sija-numero {
+  font-size: 1.2rem;
+  color: #8fa3b8;
+}
+
+.pelaaja-tiedot {
+  flex: 1;
+  text-align: left;
+}
+
+.pelaaja-otsikkorivi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.pelaaja-otsikkorivi .lista-otsikko {
+  font-size: 1.05rem;
+  font-weight: bold;
+  color: #f0f4f8;
+}
+
+.sina-tagi {
+  background: #ffd54f;
+  color: #0d131a;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.paamittari-rivi {
+  margin-bottom: 6px;
+}
+
+.paamittari {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.paamittari.rahat { color: #4caf50; }
+.paamittari.koneet { color: #64b5f6; }
+.paamittari.lennot { color: #ba68c8; }
+.paamittari.matkustajat { color: #ff8a65; }
+.paamittari.kulta { color: #ffd54f; }
+
+.mini-tilastot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stat-badge {
+  background: #111822;
+  border: 1px solid #233140;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #a0b2c6;
+}
+
 </style>

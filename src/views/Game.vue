@@ -631,25 +631,47 @@ onUnmounted(() => {
 
         <h2>Omat Piirustukset & Kokoonpano</h2>
         <ul class="lista">
-          <li v-for="piirustus in rakennettavatMallit" :key="piirustus.malliId" class="piirustus-rivi">
-            <div class="lista-otsikko">✈️ {{ piirustus.nimi }}</div>
-            <div class="lista-info">Nopeus: {{ piirustus.nopeus }} km/h | Tilaa: {{ piirustus.matkustajaMaara }} hlö</div>
-            
-            <div class="osat-kokoelma">
-              <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'moottori') ? 'omistaa' : 'puuttuu'">Moottori</span>
-              <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'runko') ? 'omistaa' : 'puuttuu'">Runko</span>
-              <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'siivet') ? 'omistaa' : 'puuttuu'">Siivet</span>
+          <li 
+            v-for="piirustus in rakennettavatMallit" 
+            :key="piirustus.malliId" 
+            :class="['piirustus-rivi', { 'piirustus-lukittu': taso < (piirustus.vaadittuTaso || 1) }]"
+          >
+            <div class="piirustus-header-rivi">
+              <div class="lista-otsikko">
+                <span v-if="taso < (piirustus.vaadittuTaso || 1)">🔒 </span>
+                <span v-else>✈️ </span>
+                {{ piirustus.nimi }}
+              </div>
+              <span v-if="taso < (piirustus.vaadittuTaso || 1)" class="lukittu-taso-badge">
+                🔒 Vaatii tason {{ piirustus.vaadittuTaso }}
+              </span>
+              <span v-else-if="(piirustus.vaadittuTaso || 1) > 1" class="auki-taso-badge">
+                ⭐ Taso {{ piirustus.vaadittuTaso }}
+              </span>
             </div>
 
-            <button 
-              v-if="onkoValmisRakennettavaksi(piirustus.malliId) && lentokoneet.length < maksimiKonePaikat" 
-              class="rakenna-nappi"
-              @click="rakennaKone(piirustus)"
-            >
-              🔨 RAKENNA KONE VALMIIKSI!
-            </button>
-            <div v-else-if="onkoValmisRakennettavaksi(piirustus.malliId) && lentokoneet.length >= maksimiKonePaikat" class="varoitusteksti">
-              Hangaari on täynnä! Osta lisää tilaa tai myy vanhoja koneita.
+            <div class="lista-info">Nopeus: {{ piirustus.nopeus }} km/h | Tilaa: {{ piirustus.matkustajaMaara }} hlö</div>
+            
+            <template v-if="taso >= (piirustus.vaadittuTaso || 1)">
+              <div class="osat-kokoelma">
+                <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'moottori') ? 'omistaa' : 'puuttuu'">Moottori</span>
+                <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'runko') ? 'omistaa' : 'puuttuu'">Runko</span>
+                <span :class="onkoOsaOmistuksessa(piirustus.malliId, 'siivet') ? 'omistaa' : 'puuttuu'">Siivet</span>
+              </div>
+
+              <button 
+                v-if="onkoValmisRakennettavaksi(piirustus.malliId) && lentokoneet.length < maksimiKonePaikat" 
+                class="rakenna-nappi"
+                @click="rakennaKone(piirustus)"
+              >
+                🔨 RAKENNA KONE VALMIIKSI!
+              </button>
+              <div v-else-if="onkoValmisRakennettavaksi(piirustus.malliId) && lentokoneet.length >= maksimiKonePaikat" class="varoitusteksti">
+                Hangaari on täynnä! Osta lisää tilaa tai myy vanhoja koneita.
+              </div>
+            </template>
+            <div v-else class="lukittu-selite">
+              🔒 Konemallin osat ja kokoonpano avautuvat saavutettuasi tason {{ piirustus.vaadittuTaso }}.
             </div>
           </li>
         </ul>
@@ -979,6 +1001,12 @@ h2 { font-size: 1.2rem; color: #aaaaaa; margin-top: 30px; margin-bottom: 10px; }
 
 .osa-nimi { color: #f39c12; }
 .piirustus-rivi { background: #1a1a2e !important; border-left: 5px solid #64b5f6 !important; }
+.piirustus-lukittu { background: #141720 !important; border-left: 5px solid #455a64 !important; opacity: 0.72; cursor: default !important; }
+.piirustus-lukittu:hover { transform: none !important; }
+.piirustus-header-rivi { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.lukittu-taso-badge { background: #2c1b1b; color: #ff8a80; border: 1px solid #c62828; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+.auki-taso-badge { background: #11283a; color: #64b5f6; border: 1px solid #1976d2; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+.lukittu-selite { margin-top: 10px; font-size: 0.85rem; color: #90a4ae; font-style: italic; background: rgba(0,0,0,0.3); padding: 6px 10px; border-radius: 4px; border: 1px dashed #37474f; }
 .osat-kokoelma { margin-top: 15px; display: flex; gap: 10px; }
 .osat-kokoelma span { padding: 5px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
 .omistaa { background: #2e7d32; color: #fff; }

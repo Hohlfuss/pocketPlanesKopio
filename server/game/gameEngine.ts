@@ -25,14 +25,18 @@ import {
   laskeTasoPalkinto
 } from './gameData'
 
-export function generoiKaupanOsat(count = 4): Osa[] {
+export function generoiKaupanOsat(count = 4, pelaajanTaso = 1): Osa[] {
   const maara = Math.max(2, Math.min(6, count))
   const uudetOsat: Osa[] = []
   const tyypit: OsaTyyppi[] = ['moottori', 'runko', 'siivet']
   let safety = 0
 
+  // Sallitaan vain koneet, joiden tasovaatimus on täyttynyt (ensimmäiset 5 konetta ovat aina auki)
+  const sallitutMallit = rakennettavatMallit.filter(m => (m.vaadittuTaso || 1) <= Math.max(1, pelaajanTaso))
+  const malliLista = sallitutMallit.length > 0 ? sallitutMallit : rakennettavatMallit.slice(0, 5)
+
   while (uudetOsat.length < maara && safety++ < 50) {
-    const malli = rakennettavatMallit[Math.floor(Math.random() * rakennettavatMallit.length)]
+    const malli = malliLista[Math.floor(Math.random() * malliLista.length)]
     const tyyppi = tyypit[Math.floor(Math.random() * tyypit.length)]
     const hinta = laskeOsanHinta(malli.malliId)
 
@@ -191,7 +195,7 @@ export function luoAlkutila(userId: string, username: string): GameState {
     lentokoneet,
     omistetutOsat: [],
     matkustajatKentilla,
-    kaupanOsat: generoiKaupanOsat(3),
+    kaupanOsat: generoiKaupanOsat(3, 1),
     tilastot: {
       tehdytLennot: 0,
       lennodetytKilometrit: 0,
@@ -243,9 +247,18 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
       )
     })
     state.matkustajaIdCounter = counterRef.current
-    state.kaupanOsat = generoiKaupanOsat(Math.floor(Math.random() * 4) + 2)
+    state.kaupanOsat = generoiKaupanOsat(Math.floor(Math.random() * 4) + 2, state.taso || 1)
     state.lastPassengerRefreshAt = nowMs
     events.push("Lentokenttien matkustajat ja kaupan osat päivitetty!")
+  } else if (Array.isArray(state.kaupanOsat)) {
+    // Siivotaan kaupasta mahdolliset liian korkean tason osat (esim. vanha tallennus)
+    const sallitut = state.kaupanOsat.filter(osa => {
+      const malli = rakennettavatMallit.find(m => m.malliId === osa.malliId)
+      return !malli || (malli.vaadittuTaso || 1) <= (state.taso || 1)
+    })
+    if (sallitut.length !== state.kaupanOsat.length) {
+      state.kaupanOsat = sallitut.length > 0 ? sallitut : generoiKaupanOsat(3, state.taso || 1)
+    }
   }
 
   state.aikaSeuraavaanPaivitykseen = Math.max(
@@ -444,6 +457,12 @@ export function suoritaToiminto(
         return { success: false, message: 'Osaa ei löydy enää kaupasta', state }
       }
       const osa = state.kaupanOsat[partIdx]
+      const piirustus = rakennettavatMallit.find(m => m.malliId === osa.malliId)
+      const vaadittu = piirustus?.vaadittuTaso || 1
+      if ((state.taso || 1) < vaadittu) {
+        return { success: false, message: `Tämän koneen osat vaativat tason ${vaadittu}!`, state }
+      }
+
       const onkoJo = state.omistetutOsat.some(o => o.malliId === osa.malliId && o.tyyppi === osa.tyyppi)
       if (onkoJo) {
         return { success: false, message: 'Omistat jo tämän osan tälle konemallille', state }
@@ -467,6 +486,10 @@ export function suoritaToiminto(
       const piirustus = rakennettavatMallit.find(m => m.malliId === malliId)
       if (!piirustus) {
         return { success: false, message: 'Tuntematon konemalli', state }
+      }
+      const vaadittu = piirustus.vaadittuTaso || 1
+      if ((state.taso || 1) < vaadittu) {
+        return { success: false, message: `Koneen ${piirustus.nimi} rakentaminen vaatii tason ${vaadittu}!`, state }
       }
 
       const tarvittavat: OsaTyyppi[] = ['moottori', 'runko', 'siivet']

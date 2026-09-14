@@ -62,6 +62,7 @@ export interface Piirustus {
   paino: number
   kulutus: number
   matkustajaMaara: number
+  vaadittuTaso?: number
 }
 
 export interface Tilastot {

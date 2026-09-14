@@ -149,3 +149,57 @@ test('Tasojärjestelmä: pelaaja aloittaa tasolta 1, kerää XP:tä lennoista ja
   assert.ok(events2.some(e => e.includes('TASON NOUSU')), 'Tapahtumalokissa tulee näkyä tason nousu')
 })
 
+test('Osien tasovaatimukset: tasolla 1 näkyvät vain ensimmäiset 5 konetta, edistyneemmät vaativat tason', async () => {
+  const { generoiKaupanOsat } = await import('../game/gameEngine')
+  const { rakennettavatMallit } = await import('../game/gameData')
+
+  // Ensimmäisten 5 koneen tulee olla tasolla 1 auki
+  for (let i = 0; i < 5; i++) {
+    assert.equal(rakennettavatMallit[i].vaadittuTaso || 1, 1, `Koneen ${rakennettavatMallit[i].nimi} tulee olla auki tasolla 1`)
+  }
+
+  // 6. koneesta eteenpäin vaaditaan korkeampi taso
+  for (let i = 5; i < rakennettavatMallit.length; i++) {
+    assert.ok((rakennettavatMallit[i].vaadittuTaso || 1) > 1, `Koneen ${rakennettavatMallit[i].nimi} tulee vaatia taso > 1`)
+  }
+
+  // Generoidaan osia tasolle 1: ei koskaan yli tason 1 osia
+  for (let i = 0; i < 20; i++) {
+    const osatTaso1 = generoiKaupanOsat(6, 1)
+    for (const osa of osatTaso1) {
+      const malli = rakennettavatMallit.find(m => m.malliId === osa.malliId)
+      assert.equal(malli?.vaadittuTaso || 1, 1, `Tasolla 1 kauppaan ei saa tulla osaa malliin ${osa.malliId}`)
+    }
+  }
+
+  // Yritetään ostaa tai rakentaa korkean tason konetta tasolla 1
+  const state = luoAlkutila('level-restrict-user', 'Pilot')
+  state.taso = 1
+  state.kulta = 500
+
+  // Lisätään kauppaan Concorden osa
+  state.kaupanOsat = [{
+    id: 'test_concorde_part',
+    malliId: 'concorde',
+    tyyppi: 'moottori',
+    hinta: 10
+  }]
+
+  const ostoRes = suoritaToiminto(state, 'buy-part', { partId: 'test_concorde_part' }, Date.now())
+  assert.equal(ostoRes.success, false, 'Tasolla 1 ei saa pystyä ostamaan Concorden osaa')
+
+  // Yritetään rakentaa Concorde tasolla 1
+  state.omistetutOsat = [
+    { malliId: 'concorde', tyyppi: 'moottori' },
+    { malliId: 'concorde', tyyppi: 'runko' },
+    { malliId: 'concorde', tyyppi: 'siivet' }
+  ]
+  const buildRes = suoritaToiminto(state, 'build-plane', { malliId: 'concorde' }, Date.now())
+  assert.equal(buildRes.success, false, 'Tasolla 1 ei saa pystyä rakentamaan Concordea')
+
+  // Nostetaan pelaajan taso Concorden vaatimalle tasolle (14)
+  state.taso = 14
+  const buildRes2 = suoritaToiminto(state, 'build-plane', { malliId: 'concorde' }, Date.now())
+  assert.equal(buildRes2.success, true, 'Tasolla 14 Concorden rakentamisen tulee onnistua')
+})
+

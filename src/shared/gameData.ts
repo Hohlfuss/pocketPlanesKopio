@@ -33,20 +33,25 @@ export const haeEtaisyys = (k1: string, k2: string): number => {
 }
 
 export const rakennettavatMallit: Piirustus[] = [
-  { malliId: "piper", nimi: "Piper Cub (Keltasirkku)", nopeus: 130, paino: 350, kulutus: 16, matkustajaMaara: 1 },
-  { malliId: "cessna150", nimi: "Cessna 150 (Kirppu)", nopeus: 150, paino: 500, kulutus: 22, matkustajaMaara: 1 },
-  { malliId: "da40", nimi: "Diamond DA40 (Kaksikko)", nopeus: 220, paino: 800, kulutus: 30, matkustajaMaara: 2 },
-  { malliId: "c172", nimi: "Cessna 172 (Taivaan Lada)", nopeus: 226, paino: 767, kulutus: 30, matkustajaMaara: 3 },
-  { malliId: "baron", nimi: "Beechcraft Baron (Paroni)", nopeus: 370, paino: 2500, kulutus: 120, matkustajaMaara: 4 },
-  { malliId: "pc12", nimi: "Pilatus PC-12 (Alppikotka)", nopeus: 520, paino: 4700, kulutus: 250, matkustajaMaara: 5 },
-  { malliId: "twinotter", nimi: "de Havilland Twin Otter (Saaristotykki)", nopeus: 280, paino: 3360, kulutus: 180, matkustajaMaara: 12 },
-  { malliId: "kingair", nimi: "Beechcraft King Air (Taivaan Herra)", nopeus: 540, paino: 5350, kulutus: 320, matkustajaMaara: 8 },
-  { malliId: "caravan", nimi: "Cessna Caravan (Rahtikasa)", nopeus: 340, paino: 4000, kulutus: 210, matkustajaMaara: 9 },
-  { malliId: "erj145", nimi: "Embraer ERJ 145 (Kapearunkoinen)", nopeus: 800, paino: 20000, kulutus: 900, matkustajaMaara: 15 },
-  { malliId: "b737", nimi: "Boeing 737 (Taivaan Valas)", nopeus: 850, paino: 41000, kulutus: 1800, matkustajaMaara: 30 },
-  { malliId: "a320", nimi: "Airbus A320 (Eurobussi)", nopeus: 830, paino: 42000, kulutus: 1750, matkustajaMaara: 35 },
-  { malliId: "concorde", nimi: "Concorde (Äänivalli)", nopeus: 2150, paino: 78000, kulutus: 8500, matkustajaMaara: 20 }
+  { malliId: "piper", nimi: "Piper Cub (Keltasirkku)", nopeus: 130, paino: 350, kulutus: 16, matkustajaMaara: 1, vaadittuTaso: 1 },
+  { malliId: "cessna150", nimi: "Cessna 150 (Kirppu)", nopeus: 150, paino: 500, kulutus: 22, matkustajaMaara: 1, vaadittuTaso: 1 },
+  { malliId: "da40", nimi: "Diamond DA40 (Kaksikko)", nopeus: 220, paino: 800, kulutus: 30, matkustajaMaara: 2, vaadittuTaso: 1 },
+  { malliId: "c172", nimi: "Cessna 172 (Taivaan Lada)", nopeus: 226, paino: 767, kulutus: 30, matkustajaMaara: 3, vaadittuTaso: 1 },
+  { malliId: "baron", nimi: "Beechcraft Baron (Paroni)", nopeus: 370, paino: 2500, kulutus: 120, matkustajaMaara: 4, vaadittuTaso: 1 },
+  { malliId: "pc12", nimi: "Pilatus PC-12 (Alppikotka)", nopeus: 520, paino: 4700, kulutus: 250, matkustajaMaara: 5, vaadittuTaso: 2 },
+  { malliId: "twinotter", nimi: "de Havilland Twin Otter (Saaristotykki)", nopeus: 280, paino: 3360, kulutus: 180, matkustajaMaara: 12, vaadittuTaso: 3 },
+  { malliId: "kingair", nimi: "Beechcraft King Air (Taivaan Herra)", nopeus: 540, paino: 5350, kulutus: 320, matkustajaMaara: 8, vaadittuTaso: 4 },
+  { malliId: "caravan", nimi: "Cessna Caravan (Rahtikasa)", nopeus: 340, paino: 4000, kulutus: 210, matkustajaMaara: 9, vaadittuTaso: 5 },
+  { malliId: "erj145", nimi: "Embraer ERJ 145 (Kapearunkoinen)", nopeus: 800, paino: 20000, kulutus: 900, matkustajaMaara: 15, vaadittuTaso: 7 },
+  { malliId: "b737", nimi: "Boeing 737 (Taivaan Valas)", nopeus: 850, paino: 41000, kulutus: 1800, matkustajaMaara: 30, vaadittuTaso: 9 },
+  { malliId: "a320", nimi: "Airbus A320 (Eurobussi)", nopeus: 830, paino: 42000, kulutus: 1750, matkustajaMaara: 35, vaadittuTaso: 11 },
+  { malliId: "concorde", nimi: "Concorde (Äänivalli)", nopeus: 2150, paino: 78000, kulutus: 8500, matkustajaMaara: 20, vaadittuTaso: 14 }
 ]
+
+export const mallinVaadittuTaso = (malliId: string): number => {
+  const m = rakennettavatMallit.find(p => p.malliId === malliId)
+  return m?.vaadittuTaso ?? 1
+}
 
 export const alkuperaisetOstettavatKentat: OstettavaKentta[] = [
   { nimi: "Turku", tier: 1, maxMatkustajat: 3 },

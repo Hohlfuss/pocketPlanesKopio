@@ -93,3 +93,21 @@ test('Huijauksen esto: ei voi ostaa kenttää ilman riittäviä varoja', () => {
   assert.equal(res.success, false)
   assert.equal(state.avatutKentat['Tampere'], undefined)
 })
+
+test('Osien hinnoittelu: kehittyneempien koneiden osat ovat kalliimpia', async () => {
+  const { laskeOsanHinta } = await import('../game/gameData')
+
+  const piperHinta = laskeOsanHinta('piper')
+  const c172Hinta = laskeOsanHinta('c172')
+  const baronHinta = laskeOsanHinta('baron')
+  const erjHinta = laskeOsanHinta('erj145')
+  const b737Hinta = laskeOsanHinta('b737')
+  const concordeHinta = laskeOsanHinta('concorde')
+
+  assert.ok(piperHinta <= c172Hinta, 'Piperin osan pitää olla halvempi kuin Cessna 172')
+  assert.ok(c172Hinta < baronHinta, 'Cessna 172 pitää olla halvempi kuin Baron')
+  assert.ok(baronHinta < erjHinta, 'Baron pitää olla halvempi kuin ERJ 145')
+  assert.ok(erjHinta < b737Hinta, 'ERJ 145 pitää olla halvempi kuin Boeing 737')
+  assert.ok(b737Hinta < concordeHinta, 'Boeing 737 pitää olla halvempi kuin Concorde')
+})
+

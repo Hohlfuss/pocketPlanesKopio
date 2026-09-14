@@ -98,6 +98,30 @@ export const hintaKulutus = (kulutusTaso: number) => 2 + (kulutusTaso * 3)
 export const hintaTilavuus = (tilavuusTaso: number) => 8 + (tilavuusTaso * 12)
 export const uudenPaikanHinta = (maksimiKonePaikat: number) => maksimiKonePaikat * 500
 
+export const malliOsanPerushinnat: Record<string, number> = {
+  piper: 3,
+  cessna150: 4,
+  da40: 6,
+  c172: 8,
+  baron: 12,
+  pc12: 16,
+  kingair: 20,
+  caravan: 24,
+  twinotter: 28,
+  erj145: 40,
+  b737: 65,
+  a320: 75,
+  concorde: 100
+}
+
+export const laskeOsanHinta = (malliId: string): number => {
+  const base = malliOsanPerushinnat[malliId] || 5
+  // Pieni luonnollinen satunnaisvaihtelu (0 - ~15%)
+  const varianssi = Math.floor(base * 0.15)
+  const lisa = varianssi > 0 ? Math.floor(Math.random() * (varianssi + 1)) : (Math.random() < 0.5 ? 1 : 0)
+  return base + lisa
+}
+
 export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: string[]) => {
   if (reitti.length === 0) {
     return { matka: 0, aikaSekunteina: 0, tulot: 0, kulut: 0, voitto: 0, isBonus: false, arvioKulta: 0 }

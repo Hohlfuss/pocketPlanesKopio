@@ -19,7 +19,8 @@ import {
   hintaKulutus,
   hintaTilavuus,
   uudenPaikanHinta,
-  laskeReitinTiedot
+  laskeReitinTiedot,
+  laskeOsanHinta
 } from './gameData'
 
 export function generoiKaupanOsat(count = 4): Osa[] {
@@ -31,7 +32,7 @@ export function generoiKaupanOsat(count = 4): Osa[] {
   while (uudetOsat.length < maara && safety++ < 50) {
     const malli = rakennettavatMallit[Math.floor(Math.random() * rakennettavatMallit.length)]
     const tyyppi = tyypit[Math.floor(Math.random() * tyypit.length)]
-    const hinta = Math.floor(Math.random() * 5) + 3 // 3-7 kultaa
+    const hinta = laskeOsanHinta(malli.malliId)
 
     if (!uudetOsat.some(o => o.malliId === malli.malliId && o.tyyppi === tyyppi)) {
       uudetOsat.push({

@@ -791,8 +791,8 @@ onUnmounted(() => {
           <ul class="lista leaderboard-lista">
             <li
               v-for="(tulos, index) in leaderboardData"
-              :key="tulos.userId || index"
-              :class="['leaderboard-rivi', { 'oma-rivi': tulos.userId === kayttaja?.id }]"
+              :key="tulos.userId || tulos.user_id || index"
+              :class="['leaderboard-rivi', { 'oma-rivi': (tulos.userId || tulos.user_id) === kayttaja?.id }]"
             >
               <div class="sija">
                 <span v-if="index === 0" class="mitali mitali-kulta" title="1. Sija">🥇</span>
@@ -803,8 +803,8 @@ onUnmounted(() => {
 
               <div class="pelaaja-tiedot">
                 <div class="pelaaja-otsikkorivi">
-                  <span class="lista-otsikko">{{ tulos.pelaajanNimi }}</span>
-                  <span v-if="tulos.userId === kayttaja?.id" class="sina-tagi">Sinä</span>
+                  <span class="lista-otsikko">{{ tulos.pelaajanNimi || tulos.pelaajan_nimi || 'Pelaaja' }}</span>
+                  <span v-if="(tulos.userId || tulos.user_id) === kayttaja?.id" class="sina-tagi">Sinä</span>
                 </div>
 
                 <!-- Korostettu päämittari valitun kategorian mukaan -->

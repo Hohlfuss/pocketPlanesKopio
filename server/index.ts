@@ -29,11 +29,22 @@ const distPath = path.join(process.cwd(), 'dist')
 
 if (fs.existsSync(distPath)) {
   console.log(`[Server] Tarjoillaan frontend kansiosta: ${distPath}`)
-  app.use(express.static(distPath))
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+        res.setHeader('Pragma', 'no-cache')
+        res.setHeader('Expires', '0')
+      }
+    }
+  }))
 
   // Kaikki muut GET-pyynnöt ohjataan Vue Routerin SPA:lle (Express 5 yhteensopiva)
   app.use((req, res, next) => {
     if (req.method === 'GET' && !req.path.startsWith('/api')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
+      res.setHeader('Pragma', 'no-cache')
+      res.setHeader('Expires', '0')
       return res.sendFile(path.join(distPath, 'index.html'))
     }
     next()

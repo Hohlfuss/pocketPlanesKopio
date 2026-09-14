@@ -115,7 +115,9 @@ export interface GameActionPayload {
 
 export interface LeaderboardEntry {
   userId: string
+  user_id?: string
   pelaajanNimi: string
+  pelaajan_nimi?: string
   rahat: number
   kulta: number
   koneet: number

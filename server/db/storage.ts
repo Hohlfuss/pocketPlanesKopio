@@ -169,9 +169,12 @@ export async function saveGameState(state: GameState, token?: string): Promise<v
 
 // Päivittää tulostaulumerkinnän paikalliseen välimuistiin ja Supabaseen
 export async function updateLeaderboardEntry(state: GameState, token?: string): Promise<void> {
+  const name = state.pelaajanNimi || 'Pelaaja'
   const entry: LeaderboardEntry = {
     userId: state.userId,
-    pelaajanNimi: state.pelaajanNimi,
+    user_id: state.userId,
+    pelaajanNimi: name,
+    pelaajan_nimi: name,
     rahat: state.rahat,
     kulta: state.kulta,
     koneet: state.lentokoneet ? state.lentokoneet.length : 0,
@@ -193,7 +196,7 @@ export async function updateLeaderboardEntry(state: GameState, token?: string): 
       .from('leaderboard')
       .upsert({
         user_id: state.userId,
-        pelaajan_nimi: state.pelaajanNimi,
+        pelaajan_nimi: name,
         rahat: state.rahat,
         kulta: state.kulta,
         lentokoneet: entry.koneet,
@@ -208,7 +211,7 @@ export async function updateLeaderboardEntry(state: GameState, token?: string): 
         .from('leaderboard')
         .upsert({
           user_id: state.userId,
-          pelaajan_nimi: state.pelaajanNimi,
+          pelaajan_nimi: name,
           rahat: state.rahat,
           kulta: state.kulta
         }, { onConflict: 'user_id' })
@@ -227,15 +230,25 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
 
   // 1. Haetaan paikallinen välimuisti pohjaksi
   for (const [userId, entry] of leaderboardCache.entries()) {
-    combinedMap.set(userId, { ...entry })
+    const name = entry.pelaajanNimi || entry.pelaajan_nimi || 'Tuntematon'
+    combinedMap.set(userId, {
+      ...entry,
+      userId,
+      user_id: userId,
+      pelaajanNimi: name,
+      pelaajan_nimi: name
+    })
   }
 
   // 2. Päivitetään aktiivisten pelitilojen tuoreimmat tiedot
   for (const [userId, state] of stateCache.entries()) {
     const existing = combinedMap.get(userId)
+    const name = state.pelaajanNimi || existing?.pelaajanNimi || existing?.pelaajan_nimi || 'Pelaaja'
     combinedMap.set(userId, {
       userId,
-      pelaajanNimi: state.pelaajanNimi,
+      user_id: userId,
+      pelaajanNimi: name,
+      pelaajan_nimi: name,
       rahat: state.rahat,
       kulta: state.kulta,
       koneet: state.lentokoneet ? state.lentokoneet.length : 0,
@@ -259,10 +272,13 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
       for (const row of data) {
         const userId = row.user_id
         const existing = combinedMap.get(userId)
+        const name = row.pelaajan_nimi || existing?.pelaajanNimi || existing?.pelaajan_nimi || 'Tuntematon'
 
         combinedMap.set(userId, {
           userId,
-          pelaajanNimi: row.pelaajan_nimi || existing?.pelaajanNimi || 'Tuntematon',
+          user_id: userId,
+          pelaajanNimi: name,
+          pelaajan_nimi: name,
           rahat: typeof row.rahat === 'number' ? Math.max(row.rahat, existing?.rahat ?? 0) : (existing?.rahat ?? 0),
           kulta: typeof row.kulta === 'number' ? Math.max(row.kulta, existing?.kulta ?? 0) : (existing?.kulta ?? 0),
           koneet: typeof row.lentokoneet === 'number' ? row.lentokoneet : (existing?.koneet ?? 0),

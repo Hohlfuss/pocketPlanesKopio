@@ -342,6 +342,21 @@ const reittiTiedot = computed(() => {
   return laskeReitinTiedot(aktiivinenKone.value, valittuKentta.value, suunniteltuReitti.value)
 })
 
+const lahetettavatKentat = computed(() => {
+  if (!valittuKentta.value) return []
+  const nykyinenPiste = suunniteltuReitti.value.length > 0
+    ? suunniteltuReitti.value[suunniteltuReitti.value.length - 1]
+    : valittuKentta.value
+
+  return Object.keys(avatutKentat.value)
+    .filter(kentta => kentta !== nykyinenPiste)
+    .map(kentta => ({
+      nimi: kentta,
+      etaisyys: haeEtaisyys(nykyinenPiste, kentta)
+    }))
+    .sort((a, b) => a.etaisyys - b.etaisyys)
+})
+
 const muotoileAika = (sekunnit: number) => {
   const min = Math.floor(sekunnit / 60)
   const sek = sekunnit % 60
@@ -722,16 +737,18 @@ onUnmounted(() => {
           <button class="laheta-matkaan-nappi" :disabled="rahat < (reittiTiedot?.kulut || 0)" @click="lahetaKone">LÄHETÄ MATKAAN 🛫</button>
         </div>
         
-        <p v-else class="ohjeteksti">Klikkaa alta kenttiä lisätäksesi ne reitille:</p>
+        <p v-else class="ohjeteksti">Klikkaa alta kenttiä lisätäksesi ne reitille (järjestetty lähimmästä kauimpaan):</p>
 
         <ul class="lista lahetys-lista">
           <li 
-            v-for="(_, kentta) in avatutKentat" 
-            :key="kentta"
-            v-show="kentta !== (suunniteltuReitti.length > 0 ? suunniteltuReitti[suunniteltuReitti.length-1] : valittuKentta)"
-            @click="lisaaReitille(kentta)"
+            v-for="etappi in lahetettavatKentat" 
+            :key="etappi.nimi"
+            @click="lisaaReitille(etappi.nimi)"
           >
-            <div class="lista-otsikko">+ Lisää etappi: {{ kentta }}</div>
+            <div class="lista-otsikko">
+              + Lisää etappi: {{ etappi.nimi }} 
+              <span class="etaisyys-badge">({{ etappi.etaisyys }} km)</span>
+            </div>
           </li>
         </ul>
       </div>

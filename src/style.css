@@ -1,3 +1,37 @@
+:root {
+  --bg-space: #090d16;
+  --bg-card: rgba(16, 24, 38, 0.82);
+  --bg-card-hover: rgba(24, 36, 56, 0.92);
+  --border-subtle: rgba(90, 140, 200, 0.16);
+  --border-bright: rgba(0, 210, 255, 0.4);
+  --accent-cyan: #00d2ff;
+  --accent-blue: #2196f3;
+  --accent-gold: #ffd54f;
+  --accent-green: #4caf50;
+  --accent-red: #ef5350;
+  --text-pure: #ffffff;
+  --text-main: #e2e8f0;
+  --text-muted: #94a3b8;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-head: 'Outfit', 'Inter', system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
-  background-color: rgb(88, 88, 88);
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-space);
+  background-image: 
+    radial-gradient(ellipse at 50% 0%, rgba(20, 45, 80, 0.5) 0%, transparent 65%),
+    radial-gradient(ellipse at 85% 90%, rgba(12, 28, 52, 0.6) 0%, transparent 55%),
+    radial-gradient(ellipse at 15% 90%, rgba(16, 32, 58, 0.6) 0%, transparent 55%);
+  background-attachment: fixed;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
 }

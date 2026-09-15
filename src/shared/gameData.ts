@@ -17,12 +17,18 @@ export const kenttaKoordinaatit: Record<string, { x: number, y: number }> = {
   "Ivalo": { x: 550, y: 100 },
   "Tallinna": { x: 500, y: 850 },
   "Riika": { x: 480, y: 1000 },
+  "Varsova": { x: 520, y: 1200 },
   "Tukholma": { x: 200, y: 750 },
   "Oslo": { x: 50, y: 750 },
   "Kööpenhamina": { x: 150, y: 1100 },
+  "Amsterdam": { x: 100, y: 1280 },
   "Berliini": { x: 300, y: 1300 },
+  "Praha": { x: 360, y: 1380 },
+  "Wien": { x: 440, y: 1460 },
   "Lontoo": { x: -100, y: 1250 },
-  "Pariisi": { x: -50, y: 1450 }
+  "Pariisi": { x: -50, y: 1450 },
+  "Rooma": { x: 360, y: 1780 },
+  "Madrid": { x: -240, y: 1780 }
 }
 
 export const haeEtaisyys = (k1: string, k2: string): number => {
@@ -42,9 +48,13 @@ export const rakennettavatMallit: Piirustus[] = [
   { malliId: "twinotter", nimi: "de Havilland Twin Otter (Saaristotykki)", nopeus: 280, paino: 3360, kulutus: 180, matkustajaMaara: 12, vaadittuTaso: 3 },
   { malliId: "kingair", nimi: "Beechcraft King Air (Taivaan Herra)", nopeus: 540, paino: 5350, kulutus: 320, matkustajaMaara: 8, vaadittuTaso: 4 },
   { malliId: "caravan", nimi: "Cessna Caravan (Rahtikasa)", nopeus: 340, paino: 4000, kulutus: 210, matkustajaMaara: 9, vaadittuTaso: 5 },
-  { malliId: "erj145", nimi: "Embraer ERJ 145 (Kapearunkoinen)", nopeus: 800, paino: 20000, kulutus: 900, matkustajaMaara: 15, vaadittuTaso: 7 },
+  { malliId: "atr42", nimi: "ATR 42 (Euroopan Työjuhta)", nopeus: 510, paino: 11500, kulutus: 480, matkustajaMaara: 16, vaadittuTaso: 6 },
+  { malliId: "erj145", nimi: "Embraer ERJ 145 (Kapearunkoinen)", nopeus: 800, paino: 20000, kulutus: 900, matkustajaMaara: 18, vaadittuTaso: 7 },
+  { malliId: "dash8", nimi: "Bombardier Dash 8 (Pohjolan Tykki)", nopeus: 660, paino: 17500, kulutus: 720, matkustajaMaara: 22, vaadittuTaso: 8 },
   { malliId: "b737", nimi: "Boeing 737 (Taivaan Valas)", nopeus: 850, paino: 41000, kulutus: 1800, matkustajaMaara: 30, vaadittuTaso: 9 },
+  { malliId: "bae146", nimi: "BAe 146 (Hiljainen Nelonen)", nopeus: 750, paino: 24000, kulutus: 1250, matkustajaMaara: 26, vaadittuTaso: 10 },
   { malliId: "a320", nimi: "Airbus A320 (Eurobussi)", nopeus: 830, paino: 42000, kulutus: 1750, matkustajaMaara: 35, vaadittuTaso: 11 },
+  { malliId: "a220", nimi: "Airbus A220 (Uuden Ajan Siipi)", nopeus: 840, paino: 37000, kulutus: 1550, matkustajaMaara: 38, vaadittuTaso: 12 },
   { malliId: "concorde", nimi: "Concorde (Äänivalli)", nopeus: 2150, paino: 78000, kulutus: 8500, matkustajaMaara: 20, vaadittuTaso: 14 }
 ]
 
@@ -66,12 +76,18 @@ export const alkuperaisetOstettavatKentat: OstettavaKentta[] = [
   { nimi: "Ivalo", tier: 1, maxMatkustajat: 3 },
   { nimi: "Tallinna", tier: 2, maxMatkustajat: 6 },
   { nimi: "Riika", tier: 2, maxMatkustajat: 6 },
+  { nimi: "Varsova", tier: 2, maxMatkustajat: 6 },
+  { nimi: "Praha", tier: 2, maxMatkustajat: 6 },
+  { nimi: "Wien", tier: 2, maxMatkustajat: 6 },
   { nimi: "Tukholma", tier: 3, maxMatkustajat: 9 },
   { nimi: "Oslo", tier: 3, maxMatkustajat: 9 },
   { nimi: "Kööpenhamina", tier: 3, maxMatkustajat: 9 },
+  { nimi: "Amsterdam", tier: 3, maxMatkustajat: 9 },
   { nimi: "Berliini", tier: 3, maxMatkustajat: 9 },
   { nimi: "Lontoo", tier: 3, maxMatkustajat: 9 },
-  { nimi: "Pariisi", tier: 3, maxMatkustajat: 9 }
+  { nimi: "Pariisi", tier: 3, maxMatkustajat: 9 },
+  { nimi: "Rooma", tier: 3, maxMatkustajat: 9 },
+  { nimi: "Madrid", tier: 3, maxMatkustajat: 9 }
 ]
 
 export const mahdollisetNimet = [
@@ -113,9 +129,13 @@ export const malliOsanPerushinnat: Record<string, number> = {
   kingair: 20,
   caravan: 24,
   twinotter: 28,
+  atr42: 32,
   erj145: 40,
+  dash8: 50,
   b737: 65,
+  bae146: 70,
   a320: 75,
+  a220: 85,
   concorde: 100
 }
 

@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { GameState, LeaderboardEntry } from '../types'
 import { supabaseAdmin } from '../middleware/auth'
 import { luoAlkutila, tickGameState } from '../game/gameEngine'
+import { alkuperaisetOstettavatKentat } from '../game/gameData'
 
 // Muistivälimuisti aktiivisille pelaajille nopeaan käsittelyyn ja rinnakkaisuuden hallintaan
 const stateCache = new Map<string, GameState>()
@@ -122,6 +123,16 @@ export async function loadGameState(userId: string, username: string, token?: st
       }
       if (!state.lastPassengerRefreshAt) {
         state.lastPassengerRefreshAt = Date.now()
+      }
+
+      // Varmistetaan, että uudet pelin lentokentät lisätään ostettavien listaan vanhoillekin tallennuksille
+      if (!Array.isArray(state.ostettavatKentat)) {
+        state.ostettavatKentat = []
+      }
+      for (const k of alkuperaisetOstettavatKentat) {
+        if (!state.avatutKentat[k.nimi] && !state.ostettavatKentat.some(ok => ok.nimi === k.nimi)) {
+          state.ostettavatKentat.push(JSON.parse(JSON.stringify(k)))
+        }
       }
 
       // Suoritetaan simulaation catch-up

@@ -203,3 +203,23 @@ test('Osien tasovaatimukset: tasolla 1 näkyvät vain ensimmäiset 5 konetta, ed
   assert.equal(buildRes2.success, true, 'Tasolla 14 Concorden rakentamisen tulee onnistua')
 })
 
+test('Uudet Euroopan lentokentät ja välitason lentokoneet', async () => {
+  const { kenttaKoordinaatit, alkuperaisetOstettavatKentat, rakennettavatMallit, malliOsanPerushinnat, haeEtaisyys } = await import('../game/gameData')
+
+  const uudetKentat = ['Amsterdam', 'Varsova', 'Praha', 'Wien', 'Rooma', 'Madrid']
+  for (const kNimi of uudetKentat) {
+    assert.ok(kenttaKoordinaatit[kNimi], `Koordinaatit puuttuvat kentältä: ${kNimi}`)
+    assert.ok(alkuperaisetOstettavatKentat.some(k => k.nimi === kNimi), `Kenttä puuttuu ostettavista kentistä: ${kNimi}`)
+    const etaisyysHki = haeEtaisyys('Helsinki', kNimi)
+    assert.ok(etaisyysHki > 0, `Etäisyyden Helsingistä kentälle ${kNimi} tulee olla positiivinen`)
+  }
+
+  const uudetKoneet = ['atr42', 'dash8', 'bae146', 'a220']
+  for (const malliId of uudetKoneet) {
+    const malli = rakennettavatMallit.find(m => m.malliId === malliId)
+    assert.ok(malli, `Uutta lentokonemallia ${malliId} ei löydy rakennettavista malleista`)
+    assert.ok((malli.vaadittuTaso || 1) >= 6 && (malli.vaadittuTaso || 1) <= 12, `Koneen ${malliId} tasovaatimuksen tulee olla 6-12 välillä`)
+    assert.ok(malliOsanPerushinnat[malliId] > 0, `Koneelle ${malliId} tulee olla osan perushinta`)
+  }
+})
+

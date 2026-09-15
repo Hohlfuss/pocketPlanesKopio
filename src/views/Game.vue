@@ -866,7 +866,18 @@ onUnmounted(() => {
         </div>
         <p v-else class="tyhja-lista">Ei odottajia.</p>
 
-        <h2>Suunnittele reitti ja lähetä</h2>
+        <div class="suunnittelu-header-lohko">
+          <h2>Suunnittele reitti ja lähetä</h2>
+          <div class="lahtokentta-banner">
+            <div class="lahto-info-vasen">
+              <span class="lahto-merkki">🛫 Lähtökaupunki:</span>
+              <span class="lahto-kaupunki-nimi">{{ valittuKentta }}</span>
+            </div>
+            <span v-if="avatutKentat[valittuKentta]" :class="['tier-badge', `tier-${avatutKentat[valittuKentta].tier}`]">
+              Tier {{ avatutKentat[valittuKentta].tier }}
+            </span>
+          </div>
+        </div>
         <div v-if="suunniteltuReitti.length > 0" class="reitti-paneeli">
           <div class="reitti-jono">
             Reitti: <strong>{{ valittuKentta }} ➔ {{ suunniteltuReitti.join(' ➔ ') }}</strong>
@@ -1783,6 +1794,62 @@ h2 {
 }
 
 /* REITIN SUUNNITTELU & LÄHETYS */
+.suunnittelu-header-lohko {
+  margin-top: 26px;
+  margin-bottom: 14px;
+}
+
+.suunnittelu-header-lohko h2 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.lahtokentta-banner {
+  background: linear-gradient(135deg, rgba(0, 180, 255, 0.16) 0%, rgba(15, 28, 48, 0.9) 100%);
+  border: 1px solid rgba(0, 210, 255, 0.45);
+  border-left: 5px solid #00d2ff;
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 18px rgba(0, 210, 255, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition: all 0.2s ease;
+}
+
+.lahtokentta-banner:hover {
+  border-color: rgba(0, 229, 255, 0.7);
+  box-shadow: 0 6px 24px rgba(0, 210, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.lahto-info-vasen {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.lahto-merkki {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #90caf9;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.lahto-kaupunki-nimi {
+  font-size: 1.25rem;
+  font-weight: 800;
+  font-family: var(--font-head, 'Outfit', sans-serif);
+  color: #ffffff;
+  letter-spacing: 0.3px;
+  text-shadow: 0 0 14px rgba(0, 210, 255, 0.7);
+}
+
 .reitti-paneeli { 
   background: rgba(22, 36, 50, 0.85); 
   border: 1px solid rgba(41, 128, 185, 0.5); 

@@ -75,6 +75,23 @@ export interface Tilastot {
   rakennetutKoneet: number
 }
 
+export type EtsintaLoytoTyyppi = 'tyhja' | 'raha' | 'kulta' | 'osa'
+
+export interface EtsintaRuutu {
+  id: number
+  avattu: boolean
+  tyyppi: EtsintaLoytoTyyppi
+  nimi: string
+  ikoni: string
+  arvoTeksti?: string
+  rahaMaara?: number
+  kultaMaara?: number
+  osa?: {
+    malliId: string
+    tyyppi: OsaTyyppi
+  }
+}
+
 export interface GameState {
   userId: string
   pelaajanNimi: string
@@ -97,6 +114,9 @@ export interface GameState {
   koneIdCounter: number
   matkustajaIdCounter: number
   lastUpdated: number
+  lastEtsintaAt: number
+  etsintaCooldownJaljella: number
+  etsintaRuudut: EtsintaRuutu[]
 }
 
 export type GameActionType =
@@ -111,6 +131,7 @@ export type GameActionType =
   | 'load-passenger'
   | 'unload-passenger'
   | 'dispatch-plane'
+  | 'avaa-etsinta-ruutu'
 
 export interface GameActionPayload {
   action: GameActionType

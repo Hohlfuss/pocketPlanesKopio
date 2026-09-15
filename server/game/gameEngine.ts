@@ -6,7 +6,8 @@ import type {
   Osa,
   OsaTyyppi,
   KenttaData,
-  Piirustus
+  Piirustus,
+  EtsintaRuutu
 } from '../types'
 import {
   haeEtaisyys,
@@ -83,6 +84,103 @@ export function generoiMatkustajatKentalle(
   }
 
   return [...olemassaOlevat, ...uudet]
+}
+
+export function generoiEtsintaRuudut(pelaajanTaso = 1): EtsintaRuutu[] {
+  const tyhjatNimet = [
+    { nimi: "Ruosteinen naula", ikoni: "🪛" },
+    { nimi: "Vanha pullonkorkki", ikoni: "🍾" },
+    { nimi: "Pellon kivi", ikoni: "🪨" },
+    { nimi: "Tölkin repäisyklipsi", ikoni: "🥫" },
+    { nimi: "Hevosenkenkä", ikoni: "🧲" },
+    { nimi: "Maakaapelin pätkä", ikoni: "🔌" },
+    { nimi: "Vanha tinalusikka", ikoni: "🥄" },
+    { nimi: "Tyhjä sorakuoppa", ikoni: "🕳️" }
+  ]
+
+  const rahaVaihtoehdot = [
+    { nimi: "Kourallinen kolikoita", ikoni: "💰", min: 60, max: 120 },
+    { nimi: "Kadonnut lompakko", ikoni: "👛", min: 130, max: 200 },
+    { nimi: "Kätketty setelitukku", ikoni: "💵", min: 200, max: 300 },
+    { nimi: "Vanha säästölipas", ikoni: "🪙", min: 250, max: 380 },
+    { nimi: "Peltipurkki käteistä", ikoni: "📦", min: 150, max: 280 }
+  ]
+
+  const kultaVaihtoehdot = [
+    { nimi: "Kultahippu", ikoni: "🟡", maara: 1 },
+    { nimi: "Vanha kultakolikko", ikoni: "🪙", maara: 2 },
+    { nimi: "Kultasormus", ikoni: "💍", maara: 2 }
+  ]
+
+  const ruudut: Omit<EtsintaRuutu, 'id'>[] = []
+
+  // 1. 8 tyhjää ruutua (~50%)
+  for (let i = 0; i < 8; i++) {
+    const t = tyhjatNimet[i % tyhjatNimet.length]
+    ruudut.push({
+      avattu: false,
+      tyyppi: 'tyhja',
+      nimi: t.nimi,
+      ikoni: t.ikoni,
+      arvoTeksti: 'Tyhjä'
+    })
+  }
+
+  // 2. 5 raharuutua (~30-35%)
+  for (let i = 0; i < 5; i++) {
+    const r = rahaVaihtoehdot[i % rahaVaihtoehdot.length]
+    const summa = Math.floor(Math.random() * (r.max - r.min + 1)) + r.min
+    ruudut.push({
+      avattu: false,
+      tyyppi: 'raha',
+      nimi: r.nimi,
+      ikoni: r.ikoni,
+      rahaMaara: summa,
+      arvoTeksti: `+${summa} €`
+    })
+  }
+
+  // 3. 2 kultaruutua (~10%)
+  for (let i = 0; i < 2; i++) {
+    const k = kultaVaihtoehdot[i % kultaVaihtoehdot.length]
+    ruudut.push({
+      avattu: false,
+      tyyppi: 'kulta',
+      nimi: k.nimi,
+      ikoni: k.ikoni,
+      kultaMaara: k.maara,
+      arvoTeksti: `+${k.maara} kultaa`
+    })
+  }
+
+  // 4. 1 lentokoneen osa (~5%)
+  const sallitutMallit = rakennettavatMallit.filter(m => (m.vaadittuTaso || 1) <= Math.max(1, pelaajanTaso))
+  const malliLista = sallitutMallit.length > 0 ? sallitutMallit : rakennettavatMallit.slice(0, 5)
+  const malli = malliLista[Math.floor(Math.random() * malliLista.length)]
+  const tyypit: OsaTyyppi[] = ['moottori', 'runko', 'siivet']
+  const osaTyyppi = tyypit[Math.floor(Math.random() * tyypit.length)]
+
+  ruudut.push({
+    avattu: false,
+    tyyppi: 'osa',
+    nimi: `${malli.nimi} - ${osaTyyppi}`,
+    ikoni: '✈️',
+    arvoTeksti: `${osaTyyppi.toUpperCase()}`,
+    osa: {
+      malliId: malli.malliId,
+      tyyppi: osaTyyppi
+    }
+  })
+
+  // Sekoitetaan 16 ruutua satunnaiseen järjestykseen
+  for (let i = ruudut.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const temp = ruudut[i]
+    ruudut[i] = ruudut[j]
+    ruudut[j] = temp
+  }
+
+  return ruudut.map((r, idx) => ({ ...r, id: idx }))
 }
 
 export function luoAlkutila(userId: string, username: string): GameState {
@@ -207,7 +305,10 @@ export function luoAlkutila(userId: string, username: string): GameState {
     },
     koneIdCounter: 4,
     matkustajaIdCounter: counterRef.current,
-    lastUpdated: now
+    lastUpdated: now,
+    lastEtsintaAt: 0,
+    etsintaCooldownJaljella: 0,
+    etsintaRuudut: generoiEtsintaRuudut(1)
   }
 }
 
@@ -366,6 +467,18 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
       kone.lentoAikaJaljella = Math.max(0, Math.ceil((kone.arrivalAt - nowMs) / 1000))
     }
   })
+
+  // 4. Päivittäinen metallinpaljastin (24 h / 86400 s)
+  const etsintaKestoMs = 86400000
+  const etsintaCooldownEnd = (state.lastEtsintaAt || 0) + etsintaKestoMs
+  state.etsintaCooldownJaljella = Math.max(0, Math.ceil((etsintaCooldownEnd - nowMs) / 1000))
+
+  if (!Array.isArray(state.etsintaRuudut) || state.etsintaRuudut.length === 0) {
+    state.etsintaRuudut = generoiEtsintaRuudut(state.taso || 1)
+  } else if (state.etsintaCooldownJaljella === 0 && state.etsintaRuudut.every(r => r.avattu)) {
+    // 24h on kulunut edellisen alueen valmistumisesta -> uusi 4x4-alue valmis tutkittavaksi!
+    state.etsintaRuudut = generoiEtsintaRuudut(state.taso || 1)
+  }
 
   state.lastUpdated = nowMs
   return { state, events }
@@ -698,6 +811,46 @@ export function suoritaToiminto(
         message: `Kone ${kone.nimi} lähti matkaan kohti kenttää ${kone.kohde}!`,
         state
       }
+    }
+
+    case 'avaa-etsinta-ruutu': {
+      const { ruutuIndeksi } = payload || {}
+      if (typeof ruutuIndeksi !== 'number' || ruutuIndeksi < 0 || ruutuIndeksi > 15) {
+        return { success: false, message: 'Virheellinen ruutu', state }
+      }
+      if (!Array.isArray(state.etsintaRuudut) || !state.etsintaRuudut[ruutuIndeksi]) {
+        return { success: false, message: 'Ruutua ei löydy', state }
+      }
+      const ruutu = state.etsintaRuudut[ruutuIndeksi]
+      if (ruutu.avattu) {
+        return { success: false, message: 'Tämä ruutu on jo tutkittu', state }
+      }
+
+      ruutu.avattu = true
+      let loytoViesti = ''
+
+      if (ruutu.tyyppi === 'raha' && ruutu.rahaMaara) {
+        state.rahat += ruutu.rahaMaara
+        state.tilastot.ansaitutRahat += ruutu.rahaMaara
+        loytoViesti = `Löysit rahaa maasta: +${ruutu.rahaMaara} €! 💰`
+      } else if (ruutu.tyyppi === 'kulta' && ruutu.kultaMaara) {
+        state.kulta += ruutu.kultaMaara
+        state.tilastot.keratytKullat += ruutu.kultaMaara
+        loytoViesti = `Upea kimmellys! Löysit kultaa: +${ruutu.kultaMaara} kultaa! 🟡`
+      } else if (ruutu.tyyppi === 'osa' && ruutu.osa) {
+        state.omistetutOsat.push({ malliId: ruutu.osa.malliId, tyyppi: ruutu.osa.tyyppi })
+        loytoViesti = `Harvinainen aarre! Löysit osan: ${ruutu.nimi}! ✈️`
+      } else {
+        loytoViesti = `Piippaus oli väärä hälytys: ${ruutu.nimi}.`
+      }
+
+      // Jos kaikki 16 ruutua on nyt avattu, käynnistetään 24h jäähy
+      if (state.etsintaRuudut.every(r => r.avattu)) {
+        state.lastEtsintaAt = nowMs
+        state.etsintaCooldownJaljella = 86400 // 24 tuntia sekunteina
+      }
+
+      return { success: true, message: loytoViesti, state }
     }
 
     default:

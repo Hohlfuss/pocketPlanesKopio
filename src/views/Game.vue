@@ -11,7 +11,8 @@ import type {
   OsaTyyppi,
   OstettavaKentta,
   Piirustus,
-  LeaderboardEntry
+  LeaderboardEntry,
+  EtsintaRuutu
 } from '../shared/types'
 import {
   rakennettavatMallit,
@@ -77,6 +78,11 @@ const aikaSeuraavaanPaivitykseen = ref(180)
 const tyopajaAuki = ref(false)
 const kenttaKauppaAuki = ref(false)
 const tilastotAuki = ref(false)
+const etsintaAuki = ref(false)
+const etsintaCooldown = ref(0)
+const etsintaRuudut = ref<EtsintaRuutu[]>([])
+const etsintaKlikattuIndeksi = ref<number | null>(null)
+const etsintaViesti = ref("")
 const valittuKentta = ref<string | null>(null)
 const valittuKoneId = ref<number | null>(null)
 const suunniteltuReitti = ref<string[]>([])
@@ -104,6 +110,8 @@ const paivitaTila = (state: any) => {
   kaupanOsat.value = state.kaupanOsat || []
   tilastot.value = state.tilastot || tilastot.value
   aikaSeuraavaanPaivitykseen.value = state.aikaSeuraavaanPaivitykseen ?? 180
+  etsintaCooldown.value = state.etsintaCooldownJaljella ?? 0
+  etsintaRuudut.value = state.etsintaRuudut || []
 }
 
 // Hakee pelitilan palvelimelta
@@ -311,12 +319,74 @@ const lisaaReitille = (kentta: string) => suunniteltuReitti.value.push(kentta)
 const tyhjennaReitti = () => { suunniteltuReitti.value = [] }
 
 const meneTaaksepain = () => {
-  if (tyopajaAuki.value) tyopajaAuki.value = false
+  if (etsintaAuki.value) etsintaAuki.value = false
+  else if (tyopajaAuki.value) tyopajaAuki.value = false
   else if (kenttaKauppaAuki.value) kenttaKauppaAuki.value = false
   else if (tilastotAuki.value) tilastotAuki.value = false
   else if (valittuKoneId.value !== null) { valittuKoneId.value = null; suunniteltuReitti.value = [] }
   else if (valittuKentta.value !== null) valittuKentta.value = null
 }
+
+const avaaRuutu = async (indeksi: number) => {
+  if (toimintoLataus.value) return
+  const ruutu = etsintaRuudut.value[indeksi]
+  if (!ruutu || ruutu.avattu) return
+
+  etsintaKlikattuIndeksi.value = indeksi
+  const onnistui = await suoritaPalvelinToiminto('avaa-etsinta-ruutu', { ruutuIndeksi: indeksi })
+  if (onnistui) {
+    const avattu = etsintaRuudut.value[indeksi]
+    if (avattu) {
+      if (avattu.tyyppi === 'raha') {
+        etsintaViesti.value = `Löysit maasta: ${avattu.nimi} (+${avattu.rahaMaara} €)! 💰`
+      } else if (avattu.tyyppi === 'kulta') {
+        etsintaViesti.value = `Upea kimmellys! ${avattu.nimi} (+${avattu.kultaMaara} kultaa)! 🟡`
+      } else if (avattu.tyyppi === 'osa') {
+        etsintaViesti.value = `Harvinainen aarre! Löysit osan: ${avattu.nimi}! ✈️`
+      } else {
+        etsintaViesti.value = `Piippaus oli väärä hälytys: ${avattu.nimi}.`
+      }
+      setTimeout(() => {
+        etsintaViesti.value = ""
+      }, 4500)
+    }
+  }
+}
+
+const muotoileTunnitMinuutit = (totalSec: number) => {
+  if (totalSec <= 0) return '0m'
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${s}s`
+  return `${s}s`
+}
+
+const etsintaAvatutLkm = computed(() => {
+  return (etsintaRuudut.value || []).filter(r => r.avattu).length
+})
+
+const etsintaKaikkiAvattu = computed(() => {
+  return (etsintaRuudut.value || []).length > 0 && (etsintaRuudut.value || []).every(r => r.avattu)
+})
+
+const etsintaSaalis = computed(() => {
+  let rahat = 0
+  let kulta = 0
+  const osat: string[] = []
+  let tyhjat = 0
+
+  ;(etsintaRuudut.value || []).forEach(r => {
+    if (!r.avattu) return
+    if (r.tyyppi === 'raha' && r.rahaMaara) rahat += r.rahaMaara
+    else if (r.tyyppi === 'kulta' && r.kultaMaara) kulta += r.kultaMaara
+    else if (r.tyyppi === 'osa' && r.osa) osat.push(r.nimi)
+    else if (r.tyyppi === 'tyhja') tyhjat++
+  })
+
+  return { rahat, kulta, osat, tyhjat }
+})
 
 const mallinNimi = (malliId: string) =>
   rakennettavatMallit.find(m => m.malliId === malliId)?.nimi || malliId
@@ -402,6 +472,14 @@ onMounted(async () => {
     // 1. Hätäapujäähy
     if (hataapuCooldown.value > 0) {
       hataapuCooldown.value--
+    }
+
+    // 1.5 Metallinpaljastinjäähy (Piippari)
+    if (etsintaCooldown.value > 0) {
+      etsintaCooldown.value--
+      if (etsintaCooldown.value === 0) {
+        lataaTilaPalvelimelta()
+      }
     }
 
     // 2. Aika päivitykseen
@@ -491,7 +569,7 @@ onUnmounted(() => {
     </div>
 
     <!-- PÄÄNAVIGOINTI -->
-    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki" class="nav-alue">
+    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki" class="nav-alue">
       <div class="yla-napit-rivi">
         <button 
           class="mini-nappi keraa-nappi" 
@@ -504,6 +582,20 @@ onUnmounted(() => {
             <span class="nappi-otsikko">Kerää (+100 €)</span>
             <span v-if="hataapuCooldown > 0" class="hataapu-ajastin">{{ muotoileAika(hataapuCooldown) }} s</span>
             <span v-else class="hataapu-valmis">Valmis!</span>
+          </div>
+        </button>
+        <button 
+          class="mini-nappi piippari-nappi" 
+          @click="etsintaAuki = true"
+          :class="{ 'piippari-syke': etsintaCooldown === 0 && !etsintaKaikkiAvattu }"
+          title="Piippari – päivittäinen metallinpaljastin"
+        >
+          <span class="nappi-ikoni">🧭</span>
+          <div class="nappi-tekstit">
+            <span class="nappi-otsikko">Piippari</span>
+            <span v-if="etsintaCooldown > 0" class="hataapu-ajastin">⏱️ {{ muotoileTunnitMinuutit(etsintaCooldown) }}</span>
+            <span v-else-if="etsintaKaikkiAvattu" class="hataapu-ajastin">Valmis!</span>
+            <span v-else class="piippari-valmis">{{ 16 - etsintaAvatutLkm }} ruutua</span>
           </div>
         </button>
         <button class="mini-nappi tehdas-nappi" @click="tyopajaAuki = true">
@@ -539,7 +631,7 @@ onUnmounted(() => {
     <div class="valikko-container">
       
       <!-- PÄÄVALIKKO -->
-      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki" class="nakyma">
+      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki" class="nakyma">
         <div class="osio-otsikko-rivi">
           <h1>📍 Omat lentokentät</h1>
           <span class="osio-badge">{{ Object.keys(avatutKentat).length }} kenttää</span>
@@ -625,6 +717,87 @@ onUnmounted(() => {
               </div>
             </li>
           </ul>
+        </div>
+      </div>
+
+      <!-- PIIPPARI (PÄIVITTÄINEN METALLINPALJASTIN) -->
+      <div v-else-if="etsintaAuki" class="nakyma piippari-nakyma">
+        <div class="osio-otsikko-rivi">
+          <div>
+            <h1>🧭 Piippari – Päivittäinen etsintä</h1>
+            <p class="ohjeteksti">
+              Tutki maaperää metallinpaljastimella kerran vuorokaudessa! Käännä 4x4-ruudukon laattoja ja löydä kätkettyjä aarteita, rahaa, kultaa ja lentokoneen osia.
+            </p>
+          </div>
+          <span class="osio-badge">{{ etsintaAvatutLkm }} / 16 tutkittu</span>
+        </div>
+
+        <!-- Tilan ilmoituslaatikko -->
+        <transition name="pop-fade">
+          <div v-if="etsintaViesti" class="etsinta-viesti-banner">
+            {{ etsintaViesti }}
+          </div>
+        </transition>
+
+        <!-- 4x4 ETSINTÄRUUDUKKO (16 RUUTUA) -->
+        <div class="piippari-alue">
+          <div class="piippari-grid">
+            <div 
+              v-for="(ruutu, index) in etsintaRuudut" 
+              :key="ruutu.id ?? index"
+              class="piippari-kortti-wrapper"
+              :class="{ 'on-avattu': ruutu.avattu, 'klikattu': etsintaKlikattuIndeksi === index }"
+              @click="avaaRuutu(index)"
+            >
+              <div class="piippari-kortti-3d">
+                <!-- ETUPUOLI (KÄÄNTÄMÄTÖN MAAPERÄLAATTA) -->
+                <div class="kortti-puoli kortti-etu">
+                  <div class="tutka-keha"></div>
+                  <div class="kortti-etu-sisus">
+                    <span class="laatta-ikoni">🧭</span>
+                    <span class="laatta-teksti">#{{ index + 1 }}</span>
+                    <span class="laatta-kehote">Tutki</span>
+                  </div>
+                </div>
+
+                <!-- TAKAPUOLI (PALJASTUNUT LÖYTÖ) -->
+                <div class="kortti-puoli kortti-taka" :class="[`loyto-${ruutu.tyyppi}`]">
+                  <div class="loyto-hohde"></div>
+                  <span class="loyto-ikoni">{{ ruutu.ikoni || (ruutu.tyyppi === 'kulta' ? '🟡' : ruutu.tyyppi === 'raha' ? '💰' : ruutu.tyyppi === 'osa' ? '✈️' : '🪨') }}</span>
+                  <span class="loyto-nimi">{{ ruutu.nimi }}</span>
+                  <span class="loyto-arvo-badge">{{ ruutu.arvoTeksti || (ruutu.tyyppi === 'tyhja' ? 'Hukkanosto' : '') }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- SAALIS- JA VALMISTUMISYHTEENVETO -->
+        <div class="piippari-yhteenveto">
+          <div class="saalis-kortti">
+            <div class="saalis-otsikko">🎒 Päivän kerätty saalis:</div>
+            <div class="saalis-rivit">
+              <span class="saalis-item raha">💰 +{{ etsintaSaalis.rahat }} €</span>
+              <span class="saalis-item kulta">🟡 +{{ etsintaSaalis.kulta }} kultaa</span>
+              <span class="saalis-item osat">✈️ {{ etsintaSaalis.osat.length }} osaa</span>
+              <span class="saalis-item tyhjat">🪨 {{ etsintaSaalis.tyhjat }} hukkanostoa</span>
+            </div>
+            <div v-if="etsintaSaalis.osat.length > 0" class="saalis-osat-lista">
+              <strong>Löydetyt osat tehtaassa:</strong>
+              <span v-for="(oNimi, oi) in etsintaSaalis.osat" :key="oi" class="saalis-osa-tag">🛠️ {{ oNimi }}</span>
+            </div>
+          </div>
+
+          <div v-if="etsintaKaikkiAvattu || etsintaCooldown > 0" class="cooldown-laatikko">
+            <div class="cooldown-ikoni">⏳</div>
+            <div class="cooldown-tekstit">
+              <h3>Kaikki ruudut tältä päivältä tutkittu!</h3>
+              <p>Uusi metallinpaljastusalue aukeaa 24 tunnin jäähyn jälkeen.</p>
+              <div class="cooldown-aika">
+                Seuraava alue valmis: <strong>{{ muotoileTunnitMinuutit(etsintaCooldown) }}</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1061,7 +1234,7 @@ onUnmounted(() => {
     </div>
 
     <!-- TAKAISIN-NAPPI -->
-    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
+    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
   </div>
 </template>
 
@@ -1313,6 +1486,37 @@ onUnmounted(() => {
   0% { box-shadow: 0 0 0 0 rgba(255, 213, 79, 0.6); }
   70% { box-shadow: 0 0 0 8px rgba(255, 213, 79, 0); }
   100% { box-shadow: 0 0 0 0 rgba(255, 213, 79, 0); }
+}
+
+.piippari-nappi {
+  flex: 1.35;
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.22) 0%, rgba(3, 169, 244, 0.16) 100%);
+  border-color: rgba(0, 229, 255, 0.45);
+  color: #80deea;
+}
+
+.piippari-nappi:hover {
+  border-color: rgba(0, 229, 255, 0.85);
+  box-shadow: 0 6px 20px rgba(0, 229, 255, 0.35);
+}
+
+.piippari-valmis {
+  font-size: 0.7rem;
+  color: #80deea;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.piippari-syke {
+  animation: cyanPulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+  border-color: #00e5ff !important;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.45) !important;
+}
+
+@keyframes cyanPulse {
+  0% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0.6); }
+  70% { box-shadow: 0 0 0 8px rgba(0, 229, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 229, 255, 0); }
 }
 
 .tehdas-nappi:hover { border-color: #f39c12; }
@@ -2346,6 +2550,315 @@ h2 {
 .takaisin-nappi:hover { 
   transform: scale(1.1) rotate(90deg); 
   box-shadow: 0 12px 30px rgba(239, 83, 80, 0.7); 
+}
+
+/* ==========================================================================
+   PIIPPARI (PÄIVITTÄINEN METALLINPALJASTIN) & 3D-KÄÄNTÖANIMAATIO
+   ========================================================================== */
+.piippari-nakyma {
+  animation: viewFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.etsinta-viesti-banner {
+  background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(14, 116, 144, 0.25));
+  border: 1px solid #00e5ff;
+  color: #e0f7fa;
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.92rem;
+  box-shadow: 0 0 16px rgba(0, 229, 255, 0.25);
+}
+
+.piippari-alue {
+  margin: 10px 0 20px 0;
+}
+
+.piippari-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  max-width: 620px;
+  margin: 0 auto;
+}
+
+/* 3D-kortin kääntökontti */
+.piippari-kortti-wrapper {
+  perspective: 1200px;
+  -webkit-perspective: 1200px;
+  cursor: pointer;
+  height: 125px;
+  position: relative;
+  user-select: none;
+}
+
+.piippari-kortti-3d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  -webkit-transform-style: preserve-3d;
+  transition: transform 0.85s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.35s ease;
+  border-radius: 14px;
+}
+
+/* Leijutus ja 3D-kallistus ennen avaamista */
+.piippari-kortti-wrapper:hover:not(.on-avattu) .piippari-kortti-3d {
+  transform: translateY(-5px) scale(1.03) rotateY(12deg);
+  box-shadow: 0 12px 28px rgba(0, 229, 255, 0.35);
+}
+
+.piippari-kortti-wrapper.on-avattu .piippari-kortti-3d {
+  transform: rotateY(180deg);
+}
+
+/* Kortin puolet (etu & taka) */
+.kortti-puoli {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Kääntämätön laatta (etupuoli) */
+.kortti-etu {
+  background: linear-gradient(145deg, rgba(28, 38, 56, 0.95), rgba(16, 22, 34, 0.98));
+  border: 2px solid rgba(80, 140, 200, 0.28);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+  position: relative;
+}
+
+.tutka-keha {
+  position: absolute;
+  width: 130px;
+  height: 130px;
+  border-radius: 50%;
+  border: 1px dashed rgba(0, 229, 255, 0.22);
+  animation: tutkaPyori 10s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes tutkaPyori {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.kortti-etu-sisus {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 1;
+}
+
+.laatta-ikoni {
+  font-size: 1.8rem;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.laatta-teksti {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #90caf9;
+  font-family: var(--font-head, 'Outfit', sans-serif);
+}
+
+.laatta-kehote {
+  font-size: 0.65rem;
+  color: #64b5f6;
+  opacity: 0.8;
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* Paljastunut laatta (takapuoli) */
+.kortti-taka {
+  transform: rotateY(180deg);
+  border: 2px solid transparent;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.loyto-ikoni {
+  font-size: 2rem;
+  margin-bottom: 2px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+.loyto-nimi {
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.15;
+  margin-bottom: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.loyto-arvo-badge {
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid currentColor;
+  letter-spacing: 0.3px;
+}
+
+/* Eri löytötyyppien uniikit hehkut ja väritykset */
+.loyto-kulta {
+  background: linear-gradient(145deg, rgba(46, 36, 10, 0.95), rgba(26, 20, 5, 0.98));
+  border-color: rgba(255, 215, 0, 0.75);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.35);
+  color: #ffd54f;
+}
+
+.loyto-raha {
+  background: linear-gradient(145deg, rgba(16, 42, 28, 0.95), rgba(8, 26, 16, 0.98));
+  border-color: rgba(0, 230, 118, 0.75);
+  box-shadow: 0 0 20px rgba(0, 230, 118, 0.35);
+  color: #69f0ae;
+}
+
+.loyto-osa {
+  background: linear-gradient(145deg, rgba(14, 38, 55, 0.95), rgba(8, 22, 36, 0.98));
+  border-color: rgba(0, 229, 255, 0.85);
+  box-shadow: 0 0 24px rgba(0, 229, 255, 0.45);
+  color: #80deea;
+}
+
+.loyto-tyhja {
+  background: linear-gradient(145deg, rgba(28, 30, 36, 0.95), rgba(18, 20, 24, 0.98));
+  border-color: rgba(140, 150, 170, 0.3);
+  opacity: 0.85;
+  color: #94a3b8;
+}
+
+/* Yhteenveto ja päivittäinen jäähyalue */
+.piippari-yhteenveto {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 620px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.saalis-kortti {
+  background: rgba(16, 24, 38, 0.85);
+  border: 1px solid rgba(100, 160, 230, 0.25);
+  border-radius: 14px;
+  padding: 16px 20px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.saalis-otsikko {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+  font-family: var(--font-head, 'Outfit', sans-serif);
+}
+
+.saalis-rivit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.saalis-item {
+  padding: 5px 12px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid transparent;
+}
+
+.saalis-item.raha { color: #69f0ae; border-color: rgba(0, 230, 118, 0.35); }
+.saalis-item.kulta { color: #ffd54f; border-color: rgba(255, 215, 0, 0.35); }
+.saalis-item.osat { color: #80deea; border-color: rgba(0, 229, 255, 0.35); }
+.saalis-item.tyhjat { color: #94a3b8; border-color: rgba(140, 150, 170, 0.25); }
+
+.saalis-osat-lista {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(100, 160, 230, 0.2);
+  font-size: 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saalis-osa-tag {
+  color: #80deea;
+  font-weight: 600;
+  padding: 3px 8px;
+  background: rgba(0, 229, 255, 0.12);
+  border-radius: 6px;
+  display: inline-block;
+  align-self: flex-start;
+}
+
+.cooldown-laatikko {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.98));
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  border-radius: 14px;
+  padding: 18px 22px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.cooldown-ikoni {
+  font-size: 2.2rem;
+}
+
+.cooldown-tekstit h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.05rem;
+  color: #f1f5f9;
+  font-family: var(--font-head, 'Outfit', sans-serif);
+}
+
+.cooldown-tekstit p {
+  margin: 0 0 6px 0;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+
+.cooldown-aika {
+  font-size: 0.9rem;
+  color: #00e5ff;
+  font-weight: 600;
+}
+
+@media (max-width: 600px) {
+  .piippari-grid { gap: 8px; }
+  .piippari-kortti-wrapper { height: 96px; }
+  .laatta-ikoni { font-size: 1.4rem; }
+  .laatta-teksti { font-size: 0.72rem; }
+  .laatta-kehote { display: none; }
+  .loyto-ikoni { font-size: 1.4rem; }
+  .loyto-nimi { font-size: 0.68rem; }
+  .loyto-arvo-badge { font-size: 0.65rem; padding: 1px 5px; }
 }
 
 @media (max-width: 480px) {

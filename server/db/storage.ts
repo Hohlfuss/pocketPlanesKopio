@@ -121,6 +121,12 @@ export async function loadGameState(userId: string, username: string, token?: st
       if (typeof state.hataapuCooldownJaljella !== 'number') {
         state.hataapuCooldownJaljella = 0
       }
+      if (typeof state.lastEtsintaAt !== 'number') {
+        state.lastEtsintaAt = 0
+      }
+      if (typeof state.etsintaCooldownJaljella !== 'number') {
+        state.etsintaCooldownJaljella = 0
+      }
       if (!state.lastPassengerRefreshAt) {
         state.lastPassengerRefreshAt = Date.now()
       }

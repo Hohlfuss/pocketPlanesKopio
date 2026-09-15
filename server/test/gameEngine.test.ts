@@ -223,3 +223,70 @@ test('Uudet Euroopan lentokentät ja välitason lentokoneet', async () => {
   }
 })
 
+test('Piippari: 4x4 ruudukon luonti, ruutujen avaaminen, palkinnot ja 24h jäähy', async () => {
+  const { generoiEtsintaRuudut, luoAlkutila, suoritaToiminto, tickGameState } = await import('../game/gameEngine')
+
+  // 1. Ruudukon generointi
+  const ruudut = generoiEtsintaRuudut(1)
+  assert.equal(ruudut.length, 16, 'Ruudukon tulee sisältää tarkalleen 16 ruutua (4x4)')
+
+  const tyhjat = ruudut.filter(r => r.tyyppi === 'tyhja')
+  const rahat = ruudut.filter(r => r.tyyppi === 'raha')
+  const kullat = ruudut.filter(r => r.tyyppi === 'kulta')
+  const osat = ruudut.filter(r => r.tyyppi === 'osa')
+
+  assert.equal(tyhjat.length, 8, 'Tyhjiä ruutuja tulee olla 8 (50%)')
+  assert.equal(rahat.length, 5, 'Raharutuja tulee olla 5 (~31%)')
+  assert.equal(kullat.length, 2, 'Kultaruutuja tulee olla 2 (~12.5%)')
+  assert.equal(osat.length, 1, 'Lentokoneen osaruutuja tulee olla 1 (~6%)')
+
+  // 2. Alkutilassa pelaajalla on 16 ruutua
+  const state = luoAlkutila('piippari-user', 'PiippariEtsija')
+  assert.equal(state.etsintaRuudut.length, 16, 'Alkutilassa tulee olla 16 etsintäruutua')
+  assert.equal(state.etsintaCooldownJaljella, 0, 'Alussa ei saa olla jäähyä')
+
+  // 3. Ruudun avaaminen
+  const alkurahat = state.rahat
+  const alkukulta = state.kulta
+  const alkuOsatLkm = state.omistetutOsat.length
+
+  const res = suoritaToiminto(state, 'avaa-etsinta-ruutu', { ruutuIndeksi: 0 }, Date.now())
+  assert.equal(res.success, true, 'Ruudun 0 avaamisen tulee onnistua')
+  assert.equal(state.etsintaRuudut[0].avattu, true, 'Ruutu 0 tulee olla merkitty avatuksi')
+
+  const avattuRuutu = state.etsintaRuudut[0]
+  if (avattuRuutu.tyyppi === 'raha') {
+    assert.equal(state.rahat, alkurahat + (avattuRuutu.rahaMaara || 0), 'Rahasumman tulee kasvaa')
+  } else if (avattuRuutu.tyyppi === 'kulta') {
+    assert.equal(state.kulta, alkukulta + (avattuRuutu.kultaMaara || 0), 'Kultamäärän tulee kasvaa')
+  } else if (avattuRuutu.tyyppi === 'osa') {
+    assert.equal(state.omistetutOsat.length, alkuOsatLkm + 1, 'Omistettujen osien määrän tulee kasvaa')
+  }
+
+  // 4. Saman ruudun avaaminen uudestaan epäonnistuu
+  const resUudestaan = suoritaToiminto(state, 'avaa-etsinta-ruutu', { ruutuIndeksi: 0 }, Date.now())
+  assert.equal(resUudestaan.success, false, 'Jo avattua ruutua ei saa pystyä avaamaan uudelleen')
+
+  // 5. Virheellinen indeksi
+  const resVirhe = suoritaToiminto(state, 'avaa-etsinta-ruutu', { ruutuIndeksi: 99 }, Date.now())
+  assert.equal(resVirhe.success, false, 'Virheellinen ruutuindeksi tulee hylätä')
+
+  // 6. Avataan loputkin 15 ruutua (indeksit 1..15)
+  const now = Date.now()
+  for (let i = 1; i < 16; i++) {
+    const r = suoritaToiminto(state, 'avaa-etsinta-ruutu', { ruutuIndeksi: i }, now)
+    assert.equal(r.success, true, `Ruudun ${i} avaamisen tulee onnistua`)
+  }
+
+  assert.ok(state.etsintaRuudut.every(r => r.avattu), 'Kaikkien 16 ruudun tulee olla avattu')
+  assert.equal(state.lastEtsintaAt, now, 'lastEtsintaAt tulee olla asetettu nykyhetkeen')
+  assert.ok(state.etsintaCooldownJaljella > 86000, '24h jäähyn tulee käynnistyä (n. 86400s)')
+
+  // 7. Simulaation aikasiirtymä: 24h kuluttua uusi 4x4 ruudukko syntyy automaattisesti
+  const after24h = now + 86400000 + 5000
+  tickGameState(state, after24h)
+  assert.equal(state.etsintaCooldownJaljella, 0, '24h kuluttua jäähyn tulee olla 0')
+  assert.equal(state.etsintaRuudut.length, 16, 'Uuden ruudukon tulee sisältää 16 ruutua')
+  assert.ok(state.etsintaRuudut.every(r => !r.avattu), 'Kaikkien uusien ruutujen tulee olla avaamattomia')
+})
+

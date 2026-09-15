@@ -173,9 +173,9 @@ export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: 
   return { matka: kokoMatka, aikaSekunteina, tulot: lopullisetTulot, kulut, voitto, isBonus, arvioKulta: lopullinenKulta }
 }
 
-// Laskee XP-määrän, joka vaaditaan seuraavalle tasolle pääsemiseksi
+// Laskee XP-määrän, joka vaaditaan seuraavalle tasolle pääsemiseksi (hidastettu tahti)
 export const tarvittavaXpTasonNostoon = (taso: number): number => {
-  return Math.round(1000 * Math.pow(Math.max(1, taso), 1.4))
+  return Math.round(2000 * Math.pow(Math.max(1, taso), 1.5))
 }
 
 // Laskee kultapalkinnon kun uusi taso saavutetaan (nousee hitaasti tason mukaan)

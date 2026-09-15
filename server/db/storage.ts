@@ -85,6 +85,7 @@ export async function loadGameState(userId: string, username: string, token?: st
     const cached = stateCache.get(userId)!
     cached.pelaajanNimi = username || cached.pelaajanNimi
     tickGameState(cached)
+    updateLeaderboardEntry(cached, token)
     return cached
   }
 
@@ -244,7 +245,8 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
       userId,
       user_id: userId,
       pelaajanNimi: name,
-      pelaajan_nimi: name
+      pelaajan_nimi: name,
+      taso: entry.taso || 1
     })
   }
 
@@ -263,6 +265,7 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
       lennot: state.tilastot?.tehdytLennot ?? 0,
       matkustajat: state.tilastot?.kuljetutMatkustajat ?? 0,
       kentat: state.avatutKentat ? Object.keys(state.avatutKentat).length : 0,
+      taso: state.taso || existing?.taso || 1,
       updatedAt: existing?.updatedAt || new Date().toISOString()
     })
   }
@@ -293,6 +296,7 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
           lennot: typeof row.lennot === 'number' ? row.lennot : (existing?.lennot ?? 0),
           matkustajat: typeof row.matkustajat === 'number' ? row.matkustajat : (existing?.matkustajat ?? 0),
           kentat: existing?.kentat ?? 0,
+          taso: typeof row.taso === 'number' ? Math.max(row.taso, existing?.taso ?? 1) : (existing?.taso ?? 1),
           updatedAt: row.updated_at || existing?.updatedAt || new Date().toISOString()
         })
       }
@@ -301,10 +305,49 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
     console.error('Poikkeus tulostaulun haussa Supabasesta:', err)
   }
 
+  // 3b. Haetaan lisäksi game_saves-taulusta tasotiedot (varmistaa tasojen näkymisen vaikka Supabasen leaderboard-taulussa ei olisi vielä taso-saraketta)
+  try {
+    const { data: savesData, error: savesError } = await supabaseAdmin
+      .from('game_saves')
+      .select('user_id, game_state')
+      .limit(100)
+
+    if (!savesError && savesData) {
+      for (const save of savesData) {
+        const uid = save.user_id
+        const gState = save.game_state as GameState | undefined
+        if (gState && typeof gState.taso === 'number' && gState.taso >= 1) {
+          const entry = combinedMap.get(uid)
+          if (entry) {
+            entry.taso = Math.max(entry.taso ?? 1, gState.taso)
+          } else {
+            const pName = gState.pelaajanNimi || 'Pelaaja'
+            combinedMap.set(uid, {
+              userId: uid,
+              user_id: uid,
+              pelaajanNimi: pName,
+              pelaajan_nimi: pName,
+              rahat: gState.rahat ?? 0,
+              kulta: gState.kulta ?? 0,
+              koneet: gState.lentokoneet ? gState.lentokoneet.length : 0,
+              lennot: gState.tilastot?.tehdytLennot ?? 0,
+              matkustajat: gState.tilastot?.kuljetutMatkustajat ?? 0,
+              kentat: gState.avatutKentat ? Object.keys(gState.avatutKentat).length : 0,
+              taso: gState.taso,
+              updatedAt: new Date().toISOString()
+            })
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    // Valinnainen haku
+  }
+
   const list = Array.from(combinedMap.values())
 
   // 4. Lajitellaan valitun sarakkeen mukaan laskevasti
-  const sortKey = (['rahat', 'koneet', 'lennot', 'matkustajat', 'kulta', 'kentat'].includes(sortBy)
+  const sortKey = (['rahat', 'taso', 'koneet', 'lennot', 'matkustajat', 'kulta', 'kentat'].includes(sortBy)
     ? sortBy
     : 'rahat') as keyof LeaderboardEntry
 

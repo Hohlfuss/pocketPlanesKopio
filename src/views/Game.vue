@@ -36,7 +36,7 @@ const pelaajanNimi = ref("")
 const leaderboardAuki = ref(false)
 const leaderboardLataus = ref(false)
 const leaderboardData = ref<LeaderboardEntry[]>([])
-const leaderboardLajittelu = ref<'rahat' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta'>('rahat')
+const leaderboardLajittelu = ref<'rahat' | 'taso' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta'>('rahat')
 let leaderboardInterval: any = null
 
 // Pelin tila (Palvelimen auktoriteetti)
@@ -246,7 +246,7 @@ const haeLeaderboard = async (naytaLataus = false) => {
   }
 }
 
-const vaihdaLeaderboardLajittelu = (uusiLajittelu: 'rahat' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta') => {
+const vaihdaLeaderboardLajittelu = (uusiLajittelu: 'rahat' | 'taso' | 'koneet' | 'lennot' | 'matkustajat' | 'kulta') => {
   leaderboardLajittelu.value = uusiLajittelu
   haeLeaderboard(true)
 }
@@ -816,6 +816,12 @@ onUnmounted(() => {
             💰 Kassavarat
           </button>
           <button
+            :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'taso' }]"
+            @click="vaihdaLeaderboardLajittelu('taso')"
+          >
+            ⭐ Taso
+          </button>
+          <button
             :class="['kategoria-nappi', { aktiivinen: leaderboardLajittelu === 'koneet' }]"
             @click="vaihdaLeaderboardLajittelu('koneet')"
           >
@@ -867,6 +873,9 @@ onUnmounted(() => {
                 <div class="paamittari-rivi">
                   <span v-if="leaderboardLajittelu === 'rahat'" class="paamittari rahat">
                     💰 {{ Number(tulos.rahat).toLocaleString() }} €
+                  </span>
+                  <span v-else-if="leaderboardLajittelu === 'taso'" class="paamittari taso">
+                    ⭐ Taso {{ tulos.taso || 1 }}
                   </span>
                   <span v-else-if="leaderboardLajittelu === 'koneet'" class="paamittari koneet">
                     ✈️ {{ tulos.koneet }} lentokonetta
@@ -1281,6 +1290,7 @@ h2 { font-size: 1.2rem; color: #aaaaaa; margin-top: 30px; margin-bottom: 10px; }
 }
 
 .paamittari.rahat { color: #4caf50; }
+.paamittari.taso { color: #64b5f6; }
 .paamittari.koneet { color: #64b5f6; }
 .paamittari.lennot { color: #ba68c8; }
 .paamittari.matkustajat { color: #ff8a65; }

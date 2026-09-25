@@ -280,6 +280,10 @@ export async function updateLeaderboardEntry(state: GameState, token?: string): 
   leaderboardCache.set(state.userId, entry)
   saveLeaderboardToFile()
 
+  if (process.env.NODE_ENV === 'test') {
+    return
+  }
+
   // Synkronoidaan Supabaseen
   const client = getSupabaseClient(state.userId, token)
   try {
@@ -372,122 +376,124 @@ export async function getLeaderboard(sortBy: string = 'rahat'): Promise<Leaderbo
     })
   }
 
-  // 3. Haetaan Supabasesta muiden pelaajien tiedot (toimii julkisesti anon-avaimella)
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('leaderboard')
-      .select('*')
-      .limit(100)
+  // 3. Haetaan Supabasesta muiden pelaajien tiedot (ohitetaan testiajossa puhtauden ja determinismin takaamiseksi)
+  if (process.env.NODE_ENV !== 'test') {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('leaderboard')
+        .select('*')
+        .limit(100)
 
-    if (error) {
-      console.warn('Virhe tulostaulun haussa Supabasesta:', error.message)
-    } else if (data) {
-      for (const row of data) {
-        const userId = row.user_id
-        const existing = combinedMap.get(userId)
-        const { name: decodedName, stats: metaStats } = decodeLeaderboardName(row.pelaajan_nimi)
-        const name = decodedName || existing?.pelaajanNimi || existing?.pelaajan_nimi || 'Tuntematon'
+      if (error) {
+        console.warn('Virhe tulostaulun haussa Supabasesta:', error.message)
+      } else if (data) {
+        for (const row of data) {
+          const userId = row.user_id
+          const existing = combinedMap.get(userId)
+          const { name: decodedName, stats: metaStats } = decodeLeaderboardName(row.pelaajan_nimi)
+          const name = decodedName || existing?.pelaajanNimi || existing?.pelaajan_nimi || 'Tuntematon'
 
-        const koneetVal = typeof row.lentokoneet === 'number'
-          ? row.lentokoneet
-          : (typeof metaStats?.koneet === 'number' ? metaStats.koneet : (existing?.koneet ?? 0))
+          const koneetVal = typeof row.lentokoneet === 'number'
+            ? row.lentokoneet
+            : (typeof metaStats?.koneet === 'number' ? metaStats.koneet : (existing?.koneet ?? 0))
 
-        const lennotVal = typeof row.lennot === 'number'
-          ? row.lennot
-          : (typeof metaStats?.lennot === 'number' ? metaStats.lennot : (existing?.lennot ?? 0))
+          const lennotVal = typeof row.lennot === 'number'
+            ? row.lennot
+            : (typeof metaStats?.lennot === 'number' ? metaStats.lennot : (existing?.lennot ?? 0))
 
-        const matkustajatVal = typeof row.matkustajat === 'number'
-          ? row.matkustajat
-          : (typeof metaStats?.matkustajat === 'number' ? metaStats.matkustajat : (existing?.matkustajat ?? 0))
+          const matkustajatVal = typeof row.matkustajat === 'number'
+            ? row.matkustajat
+            : (typeof metaStats?.matkustajat === 'number' ? metaStats.matkustajat : (existing?.matkustajat ?? 0))
 
-        const kentatVal = typeof row.kentat === 'number'
-          ? row.kentat
-          : (typeof metaStats?.kentat === 'number' ? metaStats.kentat : (existing?.kentat ?? 0))
+          const kentatVal = typeof row.kentat === 'number'
+            ? row.kentat
+            : (typeof metaStats?.kentat === 'number' ? metaStats.kentat : (existing?.kentat ?? 0))
 
-        const tasoVal = typeof row.taso === 'number'
-          ? Math.max(row.taso, existing?.taso ?? 1)
-          : (typeof metaStats?.taso === 'number' ? Math.max(metaStats.taso, existing?.taso ?? 1) : (existing?.taso ?? 1))
+          const tasoVal = typeof row.taso === 'number'
+            ? Math.max(row.taso, existing?.taso ?? 1)
+            : (typeof metaStats?.taso === 'number' ? Math.max(metaStats.taso, existing?.taso ?? 1) : (existing?.taso ?? 1))
 
-        const entry: LeaderboardEntry = {
-          userId,
-          user_id: userId,
-          pelaajanNimi: name,
-          pelaajan_nimi: name,
-          rahat: typeof row.rahat === 'number' ? Math.max(row.rahat, existing?.rahat ?? 0) : (existing?.rahat ?? 0),
-          kulta: typeof row.kulta === 'number' ? Math.max(row.kulta, existing?.kulta ?? 0) : (existing?.kulta ?? 0),
-          koneet: koneetVal,
-          lennot: lennotVal,
-          matkustajat: matkustajatVal,
-          kentat: kentatVal,
-          taso: tasoVal,
-          updatedAt: row.updated_at || existing?.updatedAt || new Date().toISOString()
-        }
+          const entry: LeaderboardEntry = {
+            userId,
+            user_id: userId,
+            pelaajanNimi: name,
+            pelaajan_nimi: name,
+            rahat: typeof row.rahat === 'number' ? Math.max(row.rahat, existing?.rahat ?? 0) : (existing?.rahat ?? 0),
+            kulta: typeof row.kulta === 'number' ? Math.max(row.kulta, existing?.kulta ?? 0) : (existing?.kulta ?? 0),
+            koneet: koneetVal,
+            lennot: lennotVal,
+            matkustajat: matkustajatVal,
+            kentat: kentatVal,
+            taso: tasoVal,
+            updatedAt: row.updated_at || existing?.updatedAt || new Date().toISOString()
+          }
 
-        combinedMap.set(userId, entry)
+          combinedMap.set(userId, entry)
 
-        // Päivitetään palvelimen omaan välimuistiin
-        if (!leaderboardCache.has(userId) || (existing && existing.rahat < entry.rahat)) {
-          leaderboardCache.set(userId, entry)
-        }
-      }
-    }
-  } catch (err: any) {
-    console.error('Poikkeus tulostaulun haussa Supabasesta:', err)
-  }
-
-  // 3b. Haetaan lisäksi game_saves-taulusta tiedot (toimii jos SUPABASE_SERVICE_ROLE_KEY on asetettu tai RLS sallii)
-  try {
-    const { data: savesData, error: savesError } = await supabaseAdmin
-      .from('game_saves')
-      .select('user_id, game_state')
-      .limit(100)
-
-    if (!savesError && savesData) {
-      for (const save of savesData) {
-        const uid = save.user_id
-        const gState = save.game_state as GameState | undefined
-        if (gState) {
-          const entry = combinedMap.get(uid)
-          const gKoneet = gState.lentokoneet ? gState.lentokoneet.length : 0
-          const gLennot = gState.tilastot?.tehdytLennot ?? 0
-          const gMatkustajat = gState.tilastot?.kuljetutMatkustajat ?? 0
-          const gKentat = gState.avatutKentat ? Object.keys(gState.avatutKentat).length : 0
-          const gTaso = typeof gState.taso === 'number' && gState.taso >= 1 ? gState.taso : 1
-          const gRahat = gState.rahat ?? 0
-          const gKulta = gState.kulta ?? 0
-
-          if (entry) {
-            entry.taso = Math.max(entry.taso ?? 1, gTaso)
-            entry.rahat = Math.max(entry.rahat, gRahat)
-            entry.kulta = Math.max(entry.kulta, gKulta)
-            if (entry.koneet === 0 && gKoneet > 0) entry.koneet = gKoneet
-            if (entry.lennot === 0 && gLennot > 0) entry.lennot = gLennot
-            if (entry.matkustajat === 0 && gMatkustajat > 0) entry.matkustajat = gMatkustajat
-            if ((entry.kentat ?? 0) === 0 && gKentat > 0) entry.kentat = gKentat
-          } else {
-            const pName = gState.pelaajanNimi || 'Pelaaja'
-            const newEntry: LeaderboardEntry = {
-              userId: uid,
-              user_id: uid,
-              pelaajanNimi: pName,
-              pelaajan_nimi: pName,
-              rahat: gRahat,
-              kulta: gKulta,
-              koneet: gKoneet,
-              lennot: gLennot,
-              matkustajat: gMatkustajat,
-              kentat: gKentat,
-              taso: gTaso,
-              updatedAt: new Date().toISOString()
-            }
-            combinedMap.set(uid, newEntry)
-            leaderboardCache.set(uid, newEntry)
+          // Päivitetään palvelimen omaan välimuistiin
+          if (!leaderboardCache.has(userId) || (existing && existing.rahat < entry.rahat)) {
+            leaderboardCache.set(userId, entry)
           }
         }
       }
+    } catch (err: any) {
+      console.error('Poikkeus tulostaulun haussa Supabasesta:', err)
     }
-  } catch (err: any) {
-    // Valinnainen haku
+
+    // 3b. Haetaan lisäksi game_saves-taulusta tiedot (toimii jos SUPABASE_SERVICE_ROLE_KEY on asetettu tai RLS sallii)
+    try {
+      const { data: savesData, error: savesError } = await supabaseAdmin
+        .from('game_saves')
+        .select('user_id, game_state')
+        .limit(100)
+
+      if (!savesError && savesData) {
+        for (const save of savesData) {
+          const uid = save.user_id
+          const gState = save.game_state as GameState | undefined
+          if (gState) {
+            const entry = combinedMap.get(uid)
+            const gKoneet = gState.lentokoneet ? gState.lentokoneet.length : 0
+            const gLennot = gState.tilastot?.tehdytLennot ?? 0
+            const gMatkustajat = gState.tilastot?.kuljetutMatkustajat ?? 0
+            const gKentat = gState.avatutKentat ? Object.keys(gState.avatutKentat).length : 0
+            const gTaso = typeof gState.taso === 'number' && gState.taso >= 1 ? gState.taso : 1
+            const gRahat = gState.rahat ?? 0
+            const gKulta = gState.kulta ?? 0
+
+            if (entry) {
+              entry.taso = Math.max(entry.taso ?? 1, gTaso)
+              entry.rahat = Math.max(entry.rahat, gRahat)
+              entry.kulta = Math.max(entry.kulta, gKulta)
+              if (entry.koneet === 0 && gKoneet > 0) entry.koneet = gKoneet
+              if (entry.lennot === 0 && gLennot > 0) entry.lennot = gLennot
+              if (entry.matkustajat === 0 && gMatkustajat > 0) entry.matkustajat = gMatkustajat
+              if ((entry.kentat ?? 0) === 0 && gKentat > 0) entry.kentat = gKentat
+            } else {
+              const pName = gState.pelaajanNimi || 'Pelaaja'
+              const newEntry: LeaderboardEntry = {
+                userId: uid,
+                user_id: uid,
+                pelaajanNimi: pName,
+                pelaajan_nimi: pName,
+                rahat: gRahat,
+                kulta: gKulta,
+                koneet: gKoneet,
+                lennot: gLennot,
+                matkustajat: gMatkustajat,
+                kentat: gKentat,
+                taso: gTaso,
+                updatedAt: new Date().toISOString()
+              }
+              combinedMap.set(uid, newEntry)
+              leaderboardCache.set(uid, newEntry)
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      // Valinnainen haku
+    }
   }
 
   // Tallennetaan tuore välimuisti levylle

@@ -79,6 +79,8 @@ const tyopajaAuki = ref(false)
 const kenttaKauppaAuki = ref(false)
 const tilastotAuki = ref(false)
 const etsintaAuki = ref(false)
+const hangariAuki = ref(false)
+const hangariFiltteri = ref<'kaikki' | 'ilmassa' | 'maassa'>('kaikki')
 const etsintaCooldown = ref(0)
 const etsintaRuudut = ref<EtsintaRuutu[]>([])
 const etsintaKlikattuIndeksi = ref<number | null>(null)
@@ -174,34 +176,38 @@ const rakennaKone = (piirustus: Piirustus) => {
   suoritaPalvelinToiminto('build-plane', { malliId: piirustus.malliId })
 }
 
-const romutaKone = async () => {
-  if (!aktiivinenKone.value) return
+const romutaKone = async (kone?: Lentokone) => {
+  const target = kone || aktiivinenKone.value
+  if (!target) return
   const vahvistus = confirm(
-    `Haluatko varmasti myydä koneen ${aktiivinenKone.value.nimi} romuttamolle?\n\nSaat tästä 500 € ja vapautat paikan hangaarista.`
+    `Haluatko varmasti myydä koneen ${target.nimi} romuttamolle?\n\nSaat tästä 500 € ja vapautat paikan hangaarista.`
   )
   if (vahvistus) {
-    const ok = await suoritaPalvelinToiminto('scrap-plane', { planeId: aktiivinenKone.value.id })
-    if (ok) {
+    const ok = await suoritaPalvelinToiminto('scrap-plane', { planeId: target.id })
+    if (ok && valittuKoneId.value === target.id) {
       valittuKoneId.value = null
     }
   }
 }
 
-const paivitaNopeus = () => {
-  if (aktiivinenKone.value) {
-    suoritaPalvelinToiminto('upgrade-plane', { planeId: aktiivinenKone.value.id, type: 'speed' })
+const paivitaNopeus = (kone?: Lentokone) => {
+  const target = kone || aktiivinenKone.value
+  if (target) {
+    suoritaPalvelinToiminto('upgrade-plane', { planeId: target.id, type: 'speed' })
   }
 }
 
-const paivitaKulutus = () => {
-  if (aktiivinenKone.value) {
-    suoritaPalvelinToiminto('upgrade-plane', { planeId: aktiivinenKone.value.id, type: 'consumption' })
+const paivitaKulutus = (kone?: Lentokone) => {
+  const target = kone || aktiivinenKone.value
+  if (target) {
+    suoritaPalvelinToiminto('upgrade-plane', { planeId: target.id, type: 'consumption' })
   }
 }
 
-const paivitaTilavuus = () => {
-  if (aktiivinenKone.value) {
-    suoritaPalvelinToiminto('upgrade-plane', { planeId: aktiivinenKone.value.id, type: 'capacity' })
+const paivitaTilavuus = (kone?: Lentokone) => {
+  const target = kone || aktiivinenKone.value
+  if (target) {
+    suoritaPalvelinToiminto('upgrade-plane', { planeId: target.id, type: 'capacity' })
   }
 }
 
@@ -327,8 +333,37 @@ const valitseKone = (id: number) => {
 const lisaaReitille = (kentta: string) => suunniteltuReitti.value.push(kentta)
 const tyhjennaReitti = () => { suunniteltuReitti.value = [] }
 
+const koneetIlmassaLkm = computed(() => lentokoneet.value.filter(k => k.tila === 'Ilmassa').length)
+const koneetMaassaLkm = computed(() => lentokoneet.value.filter(k => k.tila === 'Maassa').length)
+
+const suodatetutLentokoneet = computed(() => {
+  if (hangariFiltteri.value === 'ilmassa') {
+    return lentokoneet.value.filter(k => k.tila === 'Ilmassa')
+  }
+  if (hangariFiltteri.value === 'maassa') {
+    return lentokoneet.value.filter(k => k.tila === 'Maassa')
+  }
+  return lentokoneet.value
+})
+
+const haeMallinNimi = (malliId: string) => {
+  const m = rakennettavatMallit.find(rm => rm.malliId === malliId)
+  return m ? m.nimi : (malliId || 'Tuntematon kone')
+}
+
+const siirryKoneeseen = (kone: Lentokone) => {
+  hangariAuki.value = false
+  tyopajaAuki.value = false
+  kenttaKauppaAuki.value = false
+  tilastotAuki.value = false
+  etsintaAuki.value = false
+  valittuKentta.value = kone.sijainti
+  valitseKone(kone.id)
+}
+
 const meneTaaksepain = () => {
   if (etsintaAuki.value) etsintaAuki.value = false
+  else if (hangariAuki.value) hangariAuki.value = false
   else if (tyopajaAuki.value) tyopajaAuki.value = false
   else if (kenttaKauppaAuki.value) kenttaKauppaAuki.value = false
   else if (tilastotAuki.value) tilastotAuki.value = false
@@ -571,14 +606,14 @@ onUnmounted(() => {
       <div v-if="kultaIlmoitus" class="kulta-pop">{{ kultaIlmoitus }}</div>
 
       <div class="ajastin-rivi">
-        <span class="ajastin-pala">🛫 Hangaari: <strong>{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</strong></span>
+        <span class="ajastin-pala hangari-linkki" @click="hangariAuki = true" title="Avaa hangari ja laivasto">🛫 Hangaari: <strong>{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</strong></span>
         <span class="ajastin-piste">•</span>
         <span class="ajastin-pala">⏱️ Seuraava päivitys: <strong>{{ muotoileAika(aikaSeuraavaanPaivitykseen) }}</strong></span>
       </div>
     </div>
 
     <!-- PÄÄNAVIGOINTI -->
-    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki" class="nav-alue">
+    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki" class="nav-alue">
       <div class="yla-napit-rivi">
         <button 
           class="mini-nappi keraa-nappi" 
@@ -607,10 +642,24 @@ onUnmounted(() => {
             <span v-else class="piippari-valmis">{{ 16 - etsintaAvatutLkm }} ruutua</span>
           </div>
         </button>
+        <button 
+          class="mini-nappi hangari-nappi" 
+          @click="hangariAuki = true"
+          title="Avaa hangari ja hallitse laivastoa"
+        >
+          <span class="nappi-ikoni">🛫</span>
+          <div class="nappi-tekstit">
+            <span class="nappi-otsikko">Hangari</span>
+            <span class="hangari-paikat-badge">{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</span>
+          </div>
+        </button>
         <button class="mini-nappi tehdas-nappi" @click="tyopajaAuki = true">
           <span class="nappi-ikoni">🔧</span>
           <span class="nappi-otsikko">Tehdas</span>
         </button>
+      </div>
+
+      <div class="yla-napit-rivi ala-napit">
         <button class="mini-nappi kauppa-nappi" @click="kenttaKauppaAuki = true">
           <span class="nappi-ikoni">🌐</span>
           <span class="nappi-otsikko">Kentät</span>
@@ -619,16 +668,13 @@ onUnmounted(() => {
           <span class="nappi-ikoni">📊</span>
           <span class="nappi-otsikko">Tilastot</span>
         </button>
-      </div>
-
-      <div class="yla-napit-rivi ala-napit">
-        <button class="mini-nappi cloud-save-nappi" @click="tallennaPeliPilveen" title="Tallenna peli pilveen">
-          <span class="nappi-ikoni">☁️</span>
-          <span>Tallenna</span>
-        </button>
         <button class="mini-nappi trophy-nappi" @click="avaaLeaderboard" title="Avaa tulostaulu">
           <span class="nappi-ikoni">🏆</span>
           <span>Tulostaulu</span>
+        </button>
+        <button class="mini-nappi cloud-save-nappi" @click="tallennaPeliPilveen" title="Tallenna peli pilveen">
+          <span class="nappi-ikoni">☁️</span>
+          <span>Tallenna</span>
         </button>
         <button class="mini-nappi cloud-nappi" @click="kirjauduUlos" :title="`Kirjaudu ulos (${pelaajanNimi || 'Pelaaja'})`">
           <span class="nappi-ikoni">🚪</span>
@@ -640,7 +686,7 @@ onUnmounted(() => {
     <div class="valikko-container">
       
       <!-- PÄÄVALIKKO -->
-      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki" class="nakyma">
+      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki" class="nakyma">
         <div class="osio-otsikko-rivi">
           <h1>📍 Omat lentokentät</h1>
           <span class="osio-badge">{{ Object.keys(avatutKentat).length }} kenttää</span>
@@ -726,6 +772,267 @@ onUnmounted(() => {
               </div>
             </li>
           </ul>
+        </div>
+      </div>
+
+      <!-- HANGARI (LAIVASTO & KONEIDEN UPGRADET JA TILA) -->
+      <div v-else-if="hangariAuki" class="nakyma hangari-nakyma">
+        <div class="osio-otsikko-rivi">
+          <div>
+            <h1>🛫 Hangari & Laivasto</h1>
+            <p class="ohjeteksti">
+              Hallitse kaikkia lentokoneitasi yhdestä paikasta. Näe reaaliaikainen tilanne (lennossa tai kentällä) ja suorita nopeus-, kulutus- ja tilavuuspäivitykset.
+            </p>
+          </div>
+        </div>
+
+        <!-- HANGARIN KAPASITEETTI JA LAIVASTON YHTEENVETO -->
+        <div class="hangari-kapasiteetti-kortti">
+          <div class="hangari-info-ylariivi">
+            <div class="hangari-paikat-info">
+              <span class="hangari-kapasiteetti-otsikko">Hangaripaikat</span>
+              <span class="hangari-paikat-arvo">
+                <strong>{{ lentokoneet.length }}</strong> / {{ maksimiKonePaikat }} konetta
+              </span>
+            </div>
+            
+            <button 
+              class="osta-konepaikka-nappi" 
+              :disabled="rahat < laskeUudenPaikanHinta(maksimiKonePaikat) || toimintoLataus"
+              @click="suoritaPalvelinToiminto('buy-hangar-slot')"
+              title="Laajenna hangaria uudella konepaikalla"
+            >
+              <span class="nappi-ikoni">➕</span>
+              <div class="osta-nappi-tekstit">
+                <span class="osta-nappi-otsikko">Osta konepaikka</span>
+                <span class="osta-nappi-hinta">💰 {{ laskeUudenPaikanHinta(maksimiKonePaikat).toLocaleString() }} €</span>
+              </div>
+            </button>
+          </div>
+
+          <!-- Täyttöasteen kisko -->
+          <div class="hangari-kisko-wrapper" title="Hangaripaikkojen täyttöaste">
+            <div 
+              class="hangari-kisko-tayte" 
+              :style="{ width: Math.min(100, Math.round((lentokoneet.length / (maksimiKonePaikat || 1)) * 100)) + '%' }"
+            ></div>
+          </div>
+
+          <!-- Tilastopillerit: Kaikki, Ilmassa vs Maassa suodatus -->
+          <div class="hangari-stat-pillerit">
+            <div class="stat-pilleri" :class="{ aktiivinen: hangariFiltteri === 'kaikki' }" @click="hangariFiltteri = 'kaikki'">
+              <span class="pilleri-ikoni">📋</span>
+              <span class="pilleri-nimi">Kaikki</span>
+              <span class="pilleri-maara">{{ lentokoneet.length }}</span>
+            </div>
+            <div class="stat-pilleri" :class="{ aktiivinen: hangariFiltteri === 'ilmassa' }" @click="hangariFiltteri = 'ilmassa'">
+              <span class="pilleri-ikoni">🛫</span>
+              <span class="pilleri-nimi">Ilmassa</span>
+              <span class="pilleri-maara">{{ koneetIlmassaLkm }}</span>
+            </div>
+            <div class="stat-pilleri" :class="{ aktiivinen: hangariFiltteri === 'maassa' }" @click="hangariFiltteri = 'maassa'">
+              <span class="pilleri-ikoni">📍</span>
+              <span class="pilleri-nimi">Maassa</span>
+              <span class="pilleri-maara">{{ koneetMaassaLkm }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- TYHJÄ TILA -->
+        <div v-if="lentokoneet.length === 0" class="hangari-tyhja-tila">
+          <span class="tyhja-ikoni">🛩️</span>
+          <h2>Hangari on vielä tyhjä!</h2>
+          <p>Sinulla ei ole vielä yhtään lentokonetta laivastossasi. Rakenna koneita tehtaassa kerätyistä osista tai löydä osia piipparilla.</p>
+          <button class="nappi ensimmainen-kone-nappi" @click="tyopajaAuki = true; hangariAuki = false">
+            🔧 Siirry tehtaaseen
+          </button>
+        </div>
+
+        <div v-else-if="suodatetutLentokoneet.length === 0" class="hangari-tyhja-tila pikkutyhja">
+          <p>Ei lentokoneita tilassa <strong>{{ hangariFiltteri }}</strong>.</p>
+        </div>
+
+        <!-- LENTOKONELISTA -->
+        <div v-else class="hangari-kone-lista">
+          <div 
+            v-for="kone in suodatetutLentokoneet" 
+            :key="kone.id"
+            :class="['hangari-kone-kortti', { 'kortti-ilmassa': kone.tila === 'Ilmassa', 'kortti-maassa': kone.tila === 'Maassa' }]"
+          >
+            <!-- KORTIN YLÄOSA: Nimi, malli ja tilaindikaattori -->
+            <div class="hangari-kone-yliosa">
+              <div class="kone-tunniste-alue">
+                <span class="kone-tyyppi-ikoni">✈️</span>
+                <div>
+                  <div class="kone-paa-otsikko">
+                    <span class="kone-nimi">{{ kone.nimi }}</span>
+                    <span class="kone-malli-badge">{{ haeMallinNimi(kone.malliId) }}</span>
+                  </div>
+                  <div class="kone-alaviite">Kone-ID #{{ kone.id }}</div>
+                </div>
+              </div>
+
+              <!-- Tilastatus -->
+              <div class="kone-tila-badge-alue">
+                <div v-if="kone.tila === 'Ilmassa'" class="kone-tila-badge tila-ilmassa">
+                  <span class="pulse-dot"></span>
+                  <span>Lennossa</span>
+                </div>
+                <div v-else class="kone-tila-badge tila-maassa">
+                  <span class="vihrea-piste">●</span>
+                  <span>Maassa: {{ kone.sijainti }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- LENNON AKTIIVINEN TILA (JOS KONE ON ILMASSA) -->
+            <div v-if="kone.tila === 'Ilmassa'" class="hangari-lento-live-alue">
+              <div class="hangari-lento-reitti">
+                <span class="reitti-alku">📍 Lähtö: {{ kone.sijainti }}</span>
+                <span class="reitti-nuoli">➔</span>
+                <span class="reitti-kohde">🛬 Kohde: {{ kone.kohde }}</span>
+                <span v-if="kone.onBonusLento" class="bonus-tagi">✨ +25% Bonuslento</span>
+              </div>
+
+              <!-- Live-radar etenemispalkki -->
+              <div class="hangari-radar-kisko">
+                <div class="hangari-radar-tayte" :style="{ width: laskeLennonEdistyminen(kone) + '%' }"></div>
+                <div 
+                  class="hangari-lentava-kone" 
+                  :style="{ left: Math.min(94, Math.max(3, laskeLennonEdistyminen(kone))) + '%' }"
+                >
+                  ✈️
+                </div>
+              </div>
+
+              <div class="hangari-lento-aikatiedot">
+                <span class="lento-jaljella">⏱️ Lentoaikaa jäljellä: <strong>{{ kone.lentoAikaJaljella }} s</strong></span>
+                <span class="lento-edistyminen-pros">Edistyminen: <strong>{{ laskeLennonEdistyminen(kone) }}%</strong></span>
+              </div>
+            </div>
+
+            <!-- MATKUSTAJAT & KUORMA -->
+            <div class="hangari-kuorma-alue">
+              <div class="kuorma-header">
+                <span class="kuorma-otsikko">👥 Matkustajat</span>
+                <span class="kuorma-maara">
+                  <strong>{{ kone.matkustajatKyydissa.length }}</strong> / {{ kone.matkustajaMaara }} paikkaa
+                </span>
+              </div>
+              <div class="kuorma-kisko">
+                <div 
+                  class="kuorma-tayte" 
+                  :style="{ width: Math.min(100, Math.round((kone.matkustajatKyydissa.length / (kone.matkustajaMaara || 1)) * 100)) + '%' }"
+                ></div>
+              </div>
+              <!-- Matkustajalistaus pikamerkkeinä -->
+              <div v-if="kone.matkustajatKyydissa.length > 0" class="hangari-matkustajat-chips">
+                <span 
+                  v-for="(pax, pIdx) in kone.matkustajatKyydissa" 
+                  :key="pIdx"
+                  class="pax-chip"
+                  :title="`${pax.nimi} ➔ ${pax.kohde}`"
+                >
+                  👤 {{ pax.nimi }} <span class="pax-kohde">➔ {{ pax.kohde }}</span>
+                  <span v-if="pax.tuottaaKultaa" class="pax-kulta">🟡 +{{ pax.kultaMaara || 1 }}</span>
+                </span>
+              </div>
+              <div v-else class="kuorma-tyhja-teksti">
+                Koneessa ei ole matkustajia.
+              </div>
+            </div>
+
+            <!-- UPGRADE-OSIO: NOPEUS, KULUTUS, TILAVUUS -->
+            <div class="hangari-upgradet-osio">
+              <div class="upgradet-otsikko">⚡ Päivitykset (Upgrades)</div>
+              
+              <div class="upgrade-grid">
+                <!-- 1. NOPEUS -->
+                <div class="upgrade-laatikko">
+                  <div class="upgrade-info-rivi">
+                    <span class="upgrade-nimi">💨 Nopeus</span>
+                    <span class="upgrade-taso-badge">⭐ Taso {{ kone.nopeusTaso }}</span>
+                  </div>
+                  <div class="upgrade-arvo">{{ kone.nopeus }} km/h</div>
+                  <button 
+                    class="nappi-upgrade"
+                    :disabled="kulta < laskeHintaNopeus(kone.nopeusTaso) || toimintoLataus"
+                    @click="paivitaNopeus(kone)"
+                    title="Nosta nopeutta +20 km/h"
+                  >
+                    <span class="upgrade-teho">+20 km/h</span>
+                    <span class="upgrade-hinta">🟡 {{ laskeHintaNopeus(kone.nopeusTaso) }} kultaa</span>
+                  </button>
+                </div>
+
+                <!-- 2. KULUTUS -->
+                <div class="upgrade-laatikko">
+                  <div class="upgrade-info-rivi">
+                    <span class="upgrade-nimi">⛽ Kulutus</span>
+                    <span class="upgrade-taso-badge">⭐ Taso {{ kone.kulutusTaso }}</span>
+                  </div>
+                  <div class="upgrade-arvo">{{ kone.kulutus }} €/h</div>
+                  <button 
+                    class="nappi-upgrade"
+                    :disabled="kulta < laskeHintaKulutus(kone.kulutusTaso) || kone.kulutus <= 2 || toimintoLataus"
+                    @click="paivitaKulutus(kone)"
+                    title="Laske polttoainekulutusta 15%"
+                  >
+                    <span class="upgrade-teho">-15% kulutus</span>
+                    <span class="upgrade-hinta">
+                      🟡 {{ kone.kulutus > 2 ? `${laskeHintaKulutus(kone.kulutusTaso)} kultaa` : 'MAX' }}
+                    </span>
+                  </button>
+                </div>
+
+                <!-- 3. TILAVUUS -->
+                <div class="upgrade-laatikko">
+                  <div class="upgrade-info-rivi">
+                    <span class="upgrade-nimi">📦 Tilavuus</span>
+                    <span class="upgrade-taso-badge">⭐ Taso {{ kone.tilavuusTaso }}</span>
+                  </div>
+                  <div class="upgrade-arvo">{{ kone.matkustajaMaara }} paikkaa</div>
+                  <button 
+                    class="nappi-upgrade"
+                    :disabled="kulta < laskeHintaTilavuus(kone.tilavuusTaso) || toimintoLataus"
+                    @click="paivitaTilavuus(kone)"
+                    title="Lisää matkustajapaikka (+1 paikka)"
+                  >
+                    <span class="upgrade-teho">+1 paikka</span>
+                    <span class="upgrade-hinta">🟡 {{ laskeHintaTilavuus(kone.tilavuusTaso) }} kultaa</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- KORTIN ALAPALKKI / TOIMINNOT -->
+            <div class="hangari-kortti-footer">
+              <button 
+                v-if="kone.tila === 'Maassa'"
+                class="nappi mini-toiminto-nappi lennata-nappi"
+                @click="siirryKoneeseen(kone)"
+              >
+                🛫 Siirry kentälle ({{ kone.sijainti }})
+              </button>
+              <div v-else class="lennolla-status-note">
+                ✈️ Kone on ilmassa matkalla kentälle {{ kone.kohde }}
+              </div>
+
+              <button 
+                v-if="kone.tila === 'Maassa'"
+                class="nappi-romuta"
+                @click="romutaKone(kone)"
+                title="Myy kone romuttamolle (+500 €)"
+              >
+                🗑️ Romuta (+500 €)
+              </button>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="hangari-ala-sulje">
+          <button class="sulje-modal" @click="hangariAuki = false">Takaisin päävalikkoon</button>
         </div>
       </div>
 
@@ -993,24 +1300,24 @@ onUnmounted(() => {
         <!-- KONEEN HEADER JA ROMUTUS -->
         <div class="koneen-header">
           <h1>{{ aktiivinenKone.nimi }}</h1>
-          <button class="romuta-nappi" @click="romutaKone">🗑️ Myy romuksi (500 €)</button>
+          <button class="romuta-nappi" @click="romutaKone()">🗑️ Myy romuksi (500 €)</button>
         </div>
 
         <!-- LENTOKONEEN PÄIVITYSPANEELI -->
         <div class="upgrade-paneeli">
           <div class="lista-otsikko" style="margin-bottom: 10px;">🛠️ Päivitä konetta</div>
           <div class="upgrade-buttons">
-            <button @click="paivitaNopeus" :disabled="kulta < hintaNopeus">
+            <button @click="paivitaNopeus()" :disabled="kulta < hintaNopeus">
               <strong>Nopeus ({{ aktiivinenKone.nopeusTaso }})</strong><br/>
               +20 km/h<br/>
               <span class="kulta-teksti">🟡 {{ hintaNopeus }}</span>
             </button>
-            <button @click="paivitaKulutus" :disabled="kulta < hintaKulutus || aktiivinenKone.kulutus <= 2">
+            <button @click="paivitaKulutus()" :disabled="kulta < hintaKulutus || aktiivinenKone.kulutus <= 2">
               <strong>Kulutus ({{ aktiivinenKone.kulutusTaso }})</strong><br/>
               -15% kulua<br/>
               <span class="kulta-teksti">🟡 {{ aktiivinenKone.kulutus > 2 ? hintaKulutus : 'MAX' }}</span>
             </button>
-            <button @click="paivitaTilavuus" :disabled="kulta < hintaTilavuus" class="kallis-nappi">
+            <button @click="paivitaTilavuus()" :disabled="kulta < hintaTilavuus" class="kallis-nappi">
               <strong>Tilavuus ({{ aktiivinenKone.tilavuusTaso }})</strong><br/>
               +1 Paikka<br/>
               <span class="kulta-teksti">🟡 {{ hintaTilavuus }}</span>
@@ -1243,7 +1550,7 @@ onUnmounted(() => {
     </div>
 
     <!-- TAKAISIN-NAPPI -->
-    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
+    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki || hangariAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
   </div>
 </template>
 
@@ -2859,6 +3166,639 @@ h2 {
   font-weight: 600;
 }
 
+/* HANGARIN PAINIKE JA LINKKI */
+.hangari-nappi {
+  flex: 1.2;
+  background: linear-gradient(135deg, rgba(33, 150, 243, 0.22) 0%, rgba(30, 58, 138, 0.25) 100%);
+  border-color: rgba(33, 150, 243, 0.45);
+  color: #90caf9;
+}
+
+.hangari-nappi:hover {
+  border-color: #64b5f6;
+  box-shadow: 0 6px 20px rgba(33, 150, 243, 0.35);
+}
+
+.hangari-paikat-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #90caf9;
+  letter-spacing: 0.5px;
+}
+
+.hangari-linkki {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.hangari-linkki:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+/* HANGARI / LAIVASTO */
+.hangari-nakyma {
+  text-align: left;
+}
+
+.hangari-kapasiteetti-kortti {
+  background: rgba(18, 28, 45, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.hangari-info-ylariivi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.hangari-paikat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.hangari-kapasiteetti-otsikko {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.hangari-paikat-arvo {
+  font-size: 1.25rem;
+  color: #f1f5f9;
+}
+
+.hangari-paikat-arvo strong {
+  color: #60a5fa;
+  font-size: 1.4rem;
+}
+
+.osta-konepaikka-nappi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  color: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.osta-konepaikka-nappi:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
+}
+
+.osta-konepaikka-nappi:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+
+.osta-nappi-tekstit {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.osta-nappi-otsikko {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.osta-nappi-hinta {
+  font-size: 0.72rem;
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.hangari-kisko-wrapper {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.hangari-kisko-tayte {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.hangari-stat-pillerit {
+  display: flex;
+  gap: 8px;
+}
+
+.stat-pilleri {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: #94a3b8;
+}
+
+.stat-pilleri:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f1f5f9;
+}
+
+.stat-pilleri.aktiivinen {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: #3b82f6;
+  color: #60a5fa;
+  font-weight: 700;
+}
+
+.pilleri-maara {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* HANGARIN KONEKORTIT */
+.hangari-kone-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.hangari-kone-kortti {
+  background: #141f30;
+  border: 1px solid #23354d;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  transition: transform 0.2s, border-color 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hangari-kone-kortti:hover {
+  border-color: #3e5e8a;
+  transform: translateY(-2px);
+}
+
+.hangari-kone-kortti.kortti-ilmassa {
+  border-left: 4px solid #38bdf8;
+  background: linear-gradient(180deg, #142238 0%, #111a29 100%);
+}
+
+.hangari-kone-kortti.kortti-maassa {
+  border-left: 4px solid #4ade80;
+  background: linear-gradient(180deg, #13242a 0%, #111a24 100%);
+}
+
+.hangari-kone-yliosa {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.kone-tunniste-alue {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kone-tyyppi-ikoni {
+  font-size: 1.8rem;
+  background: rgba(255, 255, 255, 0.05);
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.kone-paa-otsikko {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.kone-nimi {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.kone-malli-badge {
+  font-size: 0.72rem;
+  background: rgba(148, 163, 184, 0.15);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #cbd5e1;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.kone-alaviite {
+  font-size: 0.72rem;
+  color: #64748b;
+  margin-top: 2px;
+}
+
+.kone-tila-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kone-tila-badge.tila-ilmassa {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+
+.kone-tila-badge.tila-maassa {
+  background: rgba(74, 222, 128, 0.15);
+  border: 1px solid rgba(74, 222, 128, 0.4);
+  color: #4ade80;
+}
+
+.vihrea-piste {
+  font-size: 0.65rem;
+  color: #4ade80;
+}
+
+/* LENTO LIVE ALUE */
+.hangari-lento-live-alue {
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hangari-lento-reitti {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  flex-wrap: wrap;
+}
+
+.reitti-nuoli {
+  color: #38bdf8;
+  font-weight: bold;
+}
+
+.reitti-kohde {
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.bonus-tagi {
+  background: rgba(255, 213, 79, 0.2);
+  border: 1px solid #ffd54f;
+  color: #ffd54f;
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.hangari-radar-kisko {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: visible;
+  margin: 6px 0;
+}
+
+.hangari-radar-tayte {
+  height: 100%;
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 100%);
+  border-radius: 999px;
+  transition: width 0.5s linear;
+}
+
+.hangari-lentava-kone {
+  position: absolute;
+  top: -10px;
+  transform: translateX(-50%);
+  font-size: 1rem;
+  filter: drop-shadow(0 0 6px #38bdf8);
+  transition: left 0.5s linear;
+}
+
+.hangari-lento-aikatiedot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+/* MATKUSTAJAT & KUORMA */
+.hangari-kuorma-alue {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kuorma-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.kuorma-maara strong {
+  color: #f1f5f9;
+}
+
+.kuorma-kisko {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.kuorma-tayte {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+  border-radius: 999px;
+}
+
+.hangari-matkustajat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pax-chip {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  color: #e2e8f0;
+}
+
+.pax-kohde {
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.pax-kulta {
+  color: #fbbf24;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.kuorma-tyhja-teksti {
+  font-size: 0.72rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+/* UPGRADES GRID */
+.hangari-upgradet-osio {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upgradet-otsikko {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: #94a3b8;
+}
+
+.upgrade-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.upgrade-laatikko {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 10px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  text-align: center;
+}
+
+.upgrade-info-rivi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+}
+
+.upgrade-nimi {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.upgrade-taso-badge {
+  font-size: 0.68rem;
+  background: rgba(255, 213, 79, 0.15);
+  border: 1px solid rgba(255, 213, 79, 0.4);
+  color: #ffd54f;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 700;
+}
+
+.upgrade-arvo {
+  font-size: 1rem;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 2px 0;
+}
+
+.nappi-upgrade {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  border: 1px solid rgba(255, 213, 79, 0.4);
+  border-radius: 6px;
+  padding: 5px 6px;
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition: all 0.15s ease;
+}
+
+.nappi-upgrade:hover:not(:disabled) {
+  background: linear-gradient(135deg, #334155 0%, #475569 100%);
+  border-color: #ffd54f;
+  transform: translateY(-1px);
+}
+
+.nappi-upgrade:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.upgrade-teho {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.upgrade-hinta {
+  font-size: 0.7rem;
+  color: #ffd54f;
+  font-weight: 700;
+}
+
+/* KORTIN FOOTER */
+.hangari-kortti-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.lennata-nappi {
+  flex: 1;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  border: 1px solid #34d399;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.lennata-nappi:hover {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
+}
+
+.lennolla-status-note {
+  flex: 1;
+  font-size: 0.78rem;
+  color: #38bdf8;
+  font-weight: 600;
+  text-align: left;
+}
+
+.nappi-romuta {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.nappi-romuta:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+
+/* TYHJÄ TILA */
+.hangari-tyhja-tila {
+  background: rgba(20, 30, 48, 0.5);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  padding: 36px 20px;
+  text-align: center;
+  margin: 20px 0;
+}
+
+.hangari-tyhja-tila .tyhja-ikoni {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 12px;
+}
+
+.hangari-tyhja-tila h2 {
+  font-size: 1.3rem;
+  color: #f1f5f9;
+  margin-bottom: 8px;
+}
+
+.hangari-tyhja-tila p {
+  color: #94a3b8;
+  max-width: 440px;
+  margin: 0 auto 20px auto;
+  font-size: 0.9rem;
+}
+
+.ensimmainen-kone-nappi {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  border: none;
+  color: #fff;
+  font-weight: 700;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.hangari-ala-sulje {
+  margin-top: 10px;
+  text-align: center;
+}
+
 @media (max-width: 600px) {
   .piippari-grid { gap: 8px; }
   .piippari-kortti-wrapper { height: 96px; }
@@ -2868,6 +3808,7 @@ h2 {
   .loyto-ikoni { font-size: 1.4rem; }
   .loyto-nimi { font-size: 0.68rem; }
   .loyto-arvo-badge { font-size: 0.65rem; padding: 1px 5px; }
+  .upgrade-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
@@ -2876,5 +3817,8 @@ h2 {
   .mini-nappi { flex: 1 1 calc(50% - 8px); }
   .xp-widget-alakulma { width: calc(100vw - 110px); left: 14px; bottom: 14px; }
   .takaisin-nappi { right: 14px; bottom: 14px; width: 52px; height: 52px; font-size: 22px; }
+  .hangari-info-ylariivi { flex-direction: column; align-items: flex-start; }
+  .osta-konepaikka-nappi { width: 100%; justify-content: center; }
+  .hangari-stat-pillerit { flex-direction: column; }
 }
 </style>

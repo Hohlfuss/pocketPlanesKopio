@@ -12,7 +12,8 @@ import type {
   OstettavaKentta,
   Piirustus,
   LeaderboardEntry,
-  EtsintaRuutu
+  EtsintaRuutu,
+  Pilotti
 } from '../shared/types'
 import {
   rakennettavatMallit,
@@ -24,7 +25,9 @@ import {
   hintaKentalle as laskeHintaKentalle,
   hintaKenttaMatkustajaPaikka as laskeHintaKenttaMatkustajaPaikka,
   laskeReitinTiedot,
-  tarvittavaXpTasonNostoon
+  tarvittavaXpTasonNostoon,
+  OLETUS_PILOTTI,
+  haeKoneenPilotti
 } from '../shared/gameData'
 
 const router = useRouter()
@@ -81,6 +84,11 @@ const tilastotAuki = ref(false)
 const etsintaAuki = ref(false)
 const hangariAuki = ref(false)
 const hangariFiltteri = ref<'kaikki' | 'ilmassa' | 'maassa'>('kaikki')
+const pilotitAuki = ref(false)
+const pilottiValilehti = ref<'omat' | 'kauppa'>('omat')
+const valittuKonePilotinAsetukseen = ref<number | null>(null)
+const pilotit = ref<Pilotti[]>([OLETUS_PILOTTI])
+const kaupanPilotit = ref<Pilotti[]>([])
 const etsintaCooldown = ref(0)
 const etsintaRuudut = ref<EtsintaRuutu[]>([])
 const etsintaKlikattuIndeksi = ref<number | null>(null)
@@ -105,11 +113,14 @@ const paivitaTila = (state: any) => {
     ...k,
     nopeusTaso: k.nopeusTaso || 0,
     kulutusTaso: k.kulutusTaso || 0,
-    tilavuusTaso: k.tilavuusTaso || 0
+    tilavuusTaso: k.tilavuusTaso || 0,
+    pilottiId: k.pilottiId ?? null
   }))
   omistetutOsat.value = state.omistetutOsat || []
   matkustajatKentilla.value = state.matkustajatKentilla || {}
   kaupanOsat.value = state.kaupanOsat || []
+  pilotit.value = state.pilotit || [OLETUS_PILOTTI]
+  kaupanPilotit.value = state.kaupanPilotit || []
   tilastot.value = state.tilastot || tilastot.value
   aikaSeuraavaanPaivitykseen.value = state.aikaSeuraavaanPaivitykseen ?? 180
   etsintaCooldown.value = state.etsintaCooldownJaljella ?? 0
@@ -230,6 +241,48 @@ const poistaMatkustaja = (matkustaja: Matkustaja, _indeksi?: number) => {
   if (aktiivinenKone.value) {
     suoritaPalvelinToiminto('unload-passenger', { planeId: aktiivinenKone.value.id, passengerId: matkustaja.id })
   }
+}
+
+// Pilottitoiminnot
+const avaaPilotit = (planeId?: number) => {
+  valittuKonePilotinAsetukseen.value = typeof planeId === 'number' ? planeId : null
+  pilotitAuki.value = true
+}
+
+const suljePilotit = () => {
+  pilotitAuki.value = false
+  valittuKonePilotinAsetukseen.value = null
+}
+
+const ostaPilotti = async (p: Pilotti) => {
+  await suoritaPalvelinToiminto('buy-pilot', { pilotId: p.id })
+}
+
+const asetaPilottiKoneeseen = async (planeId: number, pilotId: string | null) => {
+  const ok = await suoritaPalvelinToiminto('assign-pilot', { planeId, pilotId })
+  if (ok && valittuKonePilotinAsetukseen.value === planeId) {
+    valittuKonePilotinAsetukseen.value = null
+  }
+}
+
+const paivitaPilotti = async (p: Pilotti) => {
+  await suoritaPalvelinToiminto('upgrade-pilot', { pilotId: p.id })
+}
+
+const irtisanoPilotti = async (p: Pilotti) => {
+  if (confirm(`Haluatko varmasti irtisanoa pilotin ${p.nimi}?\nSaat pienen erorahahyvityksen.`)) {
+    await suoritaPalvelinToiminto('fire-pilot', { pilotId: p.id })
+  }
+}
+
+const haePilottiKoneelle = (kone?: Lentokone | null): Pilotti => {
+  return haeKoneenPilotti(kone, pilotit.value)
+}
+
+const koneenNimiIdlla = (planeId?: number | null): string => {
+  if (!planeId) return ''
+  const k = lentokoneet.value.find(item => item.id === planeId)
+  return k ? k.nimi : `Kone #${planeId}`
 }
 
 const lahetaKone = async () => {
@@ -371,7 +424,8 @@ const siirryKoneeseen = (kone: Lentokone) => {
 }
 
 const meneTaaksepain = () => {
-  if (etsintaAuki.value) etsintaAuki.value = false
+  if (pilotitAuki.value) suljePilotit()
+  else if (etsintaAuki.value) etsintaAuki.value = false
   else if (hangariAuki.value) hangariAuki.value = false
   else if (tyopajaAuki.value) tyopajaAuki.value = false
   else if (kenttaKauppaAuki.value) kenttaKauppaAuki.value = false
@@ -494,7 +548,8 @@ const ryhmitellytMatkustajat = computed(() => {
 
 const reittiTiedot = computed(() => {
   if (!aktiivinenKone.value || !valittuKentta.value) return null
-  return laskeReitinTiedot(aktiivinenKone.value, valittuKentta.value, suunniteltuReitti.value)
+  const pilotti = haePilottiKoneelle(aktiivinenKone.value)
+  return laskeReitinTiedot(aktiivinenKone.value, valittuKentta.value, suunniteltuReitti.value, pilotti)
 })
 
 const lahetettavatKentat = computed(() => {
@@ -630,12 +685,14 @@ onUnmounted(() => {
       <div class="ajastin-rivi">
         <span class="ajastin-pala hangari-linkki" @click="hangariAuki = true" title="Avaa hangari ja laivasto">🛫 Hangaari: <strong>{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</strong></span>
         <span class="ajastin-piste">•</span>
+        <span class="ajastin-pala hangari-linkki" @click="avaaPilotit()" title="Avaa pilottikeskus ja rekrytointi">👨‍✈️ Miehistö: <strong>{{ pilotit.length }}</strong></span>
+        <span class="ajastin-piste">•</span>
         <span class="ajastin-pala">⏱️ Seuraava päivitys: <strong>{{ muotoileAika(aikaSeuraavaanPaivitykseen) }}</strong></span>
       </div>
     </div>
 
     <!-- PÄÄNAVIGOINTI -->
-    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki" class="nav-alue">
+    <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki && !pilotitAuki" class="nav-alue">
       <div class="yla-napit-rivi">
         <button 
           class="mini-nappi keraa-nappi" 
@@ -675,6 +732,17 @@ onUnmounted(() => {
             <span class="hangari-paikat-badge">{{ lentokoneet.length }} / {{ maksimiKonePaikat }}</span>
           </div>
         </button>
+        <button 
+          class="mini-nappi pilotit-nappi" 
+          @click="avaaPilotit()"
+          title="Avaa pilottikeskus ja hallitse miehistöä"
+        >
+          <span class="nappi-ikoni">👨‍✈️</span>
+          <div class="nappi-tekstit">
+            <span class="nappi-otsikko">Pilotit</span>
+            <span class="pilotti-maara-badge">{{ pilotit.length }} kuskia</span>
+          </div>
+        </button>
         <button class="mini-nappi tehdas-nappi" @click="tyopajaAuki = true">
           <span class="nappi-ikoni">🔧</span>
           <span class="nappi-otsikko">Tehdas</span>
@@ -708,7 +776,7 @@ onUnmounted(() => {
     <div class="valikko-container">
       
       <!-- PÄÄVALIKKO -->
-      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki" class="nakyma">
+      <div v-if="!valittuKentta && !tyopajaAuki && !kenttaKauppaAuki && !tilastotAuki && !etsintaAuki && !hangariAuki && !pilotitAuki" class="nakyma">
         <div class="osio-otsikko-rivi">
           <h1>📍 Omat lentokentät</h1>
           <span class="osio-badge">{{ Object.keys(avatutKentat).length }} kenttää</span>
@@ -964,6 +1032,40 @@ onUnmounted(() => {
               </div>
             </div>
 
+            <!-- KONEEN PILOTTI -TIEDOT -->
+            <div class="hangari-pilotti-laatikko" :class="`rarity-${haePilottiKoneelle(kone).harvinaisuus}`">
+              <div class="pilotti-vasen-tiedot">
+                <span class="pilotti-avatar-suuri">{{ haePilottiKoneelle(kone).avatar }}</span>
+                <div class="pilotti-tekstit">
+                  <div class="pilotti-nimi-rivi">
+                    <span class="pilotti-nimi">{{ haePilottiKoneelle(kone).nimi }}</span>
+                    <span :class="['pilotti-harvinaisuus-tag', `tag-${haePilottiKoneelle(kone).harvinaisuus}`]">
+                      {{ haePilottiKoneelle(kone).harvinaisuus.toUpperCase() }}
+                    </span>
+                    <span v-if="haePilottiKoneelle(kone).id !== 'pilot_default'" class="pilotti-taso-badge">
+                      ⭐ Taso {{ haePilottiKoneelle(kone).taso }}
+                    </span>
+                  </div>
+                  <div class="pilotti-titteli">{{ haePilottiKoneelle(kone).titteli }}</div>
+                  <div class="pilotti-bonukset-pillerit">
+                    <span v-if="haePilottiKoneelle(kone).statit.nopeusBonus > 0" class="mini-stat-badge">💨 +{{ haePilottiKoneelle(kone).statit.nopeusBonus }}% nopeus</span>
+                    <span v-if="haePilottiKoneelle(kone).statit.kulutusAlennus > 0" class="mini-stat-badge">⛽ -{{ haePilottiKoneelle(kone).statit.kulutusAlennus }}% kulu</span>
+                    <span v-if="haePilottiKoneelle(kone).statit.tuloBonus > 0" class="mini-stat-badge">💰 +{{ haePilottiKoneelle(kone).statit.tuloBonus }}% tulot</span>
+                    <span v-if="haePilottiKoneelle(kone).statit.kultaBonus > 0" class="mini-stat-badge">🟡 +{{ haePilottiKoneelle(kone).statit.kultaBonus }}% kulta</span>
+                    <span v-if="haePilottiKoneelle(kone).statit.xpBonus > 0" class="mini-stat-badge">🌟 +{{ haePilottiKoneelle(kone).statit.xpBonus }}% XP</span>
+                    <span v-if="haePilottiKoneelle(kone).id === 'pilot_default'" class="mini-stat-tyhja">🥱 0% bonukset (Tylsä oletuspilotti)</span>
+                  </div>
+                </div>
+              </div>
+              <button 
+                class="vaihda-pilotti-nappi"
+                @click="avaaPilotit(kone.id)"
+                title="Aseta tälle koneelle parempi pilotti tai vaihda nykyistä"
+              >
+                {{ kone.pilottiId ? '🔄 Vaihda pilotti' : '➕ Aseta pilotti' }}
+              </button>
+            </div>
+
             <!-- UPGRADE-OSIO: NOPEUS, KULUTUS, TILAVUUS -->
             <div class="hangari-upgradet-osio">
               <div class="upgradet-otsikko">⚡ Päivitykset (Upgrades)</div>
@@ -1055,6 +1157,260 @@ onUnmounted(() => {
 
         <div class="hangari-ala-sulje">
           <button class="sulje-modal" @click="hangariAuki = false">Takaisin päävalikkoon</button>
+        </div>
+      </div>
+
+      <!-- PILOTTIKESKUS & REKRYTOINTI -->
+      <div v-else-if="pilotitAuki" class="nakyma pilotit-nakyma">
+        <div class="osio-otsikko-rivi">
+          <div>
+            <h1>👨‍✈️ Lentäjät & Rekrytointi</h1>
+            <p class="ohjeteksti">
+              Palkkaa ammattilentäjiä parantamaan lentokoneidesi suorituskykyä! Harvinaisemmat pilotit tarjoavat kovia nopeusbonuksia, säästävät polttoainetta ja kerryttävät lisätuloja ja kultaa.
+            </p>
+          </div>
+          <span class="osio-badge">Miehistö: {{ pilotit.length }} kpl</span>
+        </div>
+
+        <!-- Jos ollaan asettamassa pilottia tietylle koneelle -->
+        <div v-if="valittuKonePilotinAsetukseen !== null" class="pilotti-valinta-ohje-banner">
+          <span>✈️ Valitaan pilottia koneelle: <strong>{{ koneenNimiIdlla(valittuKonePilotinAsetukseen) }}</strong></span>
+          <button class="nappi-peruuta-valinta" @click="valittuKonePilotinAsetukseen = null">Peruuta kohdennus</button>
+        </div>
+
+        <!-- VÄLILEHTIVALITSIN -->
+        <div class="pilotti-tabit">
+          <button 
+            class="pilotti-tab-nappi" 
+            :class="{ active: pilottiValilehti === 'omat' }" 
+            @click="pilottiValilehti = 'omat'"
+          >
+            👨‍✈️ Oma miehistö ({{ pilotit.length }})
+          </button>
+          <button 
+            class="pilotti-tab-nappi" 
+            :class="{ active: pilottiValilehti === 'kauppa' }" 
+            @click="pilottiValilehti = 'kauppa'"
+          >
+            🏢 Rekrytointitoimisto ({{ kaupanPilotit.length }})
+            <span class="kauppa-ajastin-badge">⏱️ {{ muotoileAika(aikaSeuraavaanPaivitykseen) }}</span>
+          </button>
+        </div>
+
+        <!-- 1. OMA MIEHISTÖ -->
+        <div v-if="pilottiValilehti === 'omat'" class="pilotti-sisalto">
+          <div class="pilotti-grid">
+            <div 
+              v-for="pilotti in pilotit" 
+              :key="pilotti.id" 
+              class="pilotti-kortti"
+              :class="'kortti-' + pilotti.harvinaisuus"
+            >
+              <div class="pilotti-kortti-header">
+                <div class="pilotti-kuva-alue">
+                  <span class="pilotti-iso-emoji">{{ pilotti.avatar }}</span>
+                </div>
+                <div class="pilotti-paatiedot">
+                  <div class="pilotti-nimi-rivi">
+                    <h3 class="pilotti-nimi">{{ pilotti.nimi }}</h3>
+                    <span class="harvinaisuus-tag" :class="'tag-' + pilotti.harvinaisuus">
+                      {{ pilotti.harvinaisuus }}
+                    </span>
+                  </div>
+                  <div class="pilotti-titteli">{{ pilotti.titteli }}</div>
+                  <div class="pilotti-taso-rivi">
+                    <span class="taso-pala">⭐ Taso {{ pilotti.taso }} / {{ pilotti.maxTaso }}</span>
+                    <span class="pilotti-tyyppi-teksti" v-if="pilotti.id === 'pilot_default'">(Oletuslentäjä)</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- STATSIT JA BONUKSET -->
+              <div class="pilotti-statit-laatikko">
+                <div class="stat-otsikko">Lentobonukset:</div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': pilotti.statit.nopeusBonus > 0 }">
+                  <span class="stat-label">⚡ Lentonopeus:</span>
+                  <span class="stat-arvo">{{ pilotti.statit.nopeusBonus > 0 ? `+${pilotti.statit.nopeusBonus}%` : '0%' }}</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': pilotti.statit.kulutusAlennus > 0 }">
+                  <span class="stat-label">⛽ Polttoainesäästö:</span>
+                  <span class="stat-arvo">{{ pilotti.statit.kulutusAlennus > 0 ? `-${pilotti.statit.kulutusAlennus}%` : '0%' }}</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': pilotti.statit.tuloBonus > 0 }">
+                  <span class="stat-label">💶 Lipputulobonus:</span>
+                  <span class="stat-arvo">{{ pilotti.statit.tuloBonus > 0 ? `+${pilotti.statit.tuloBonus}%` : '0%' }}</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': pilotti.statit.kultaBonus > 0 }">
+                  <span class="stat-label">🟡 Kultabonus per lento:</span>
+                  <span class="stat-arvo">{{ pilotti.statit.kultaBonus > 0 ? `+${pilotti.statit.kultaBonus} kultaa` : '0' }}</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': pilotti.statit.xpBonus > 0 }">
+                  <span class="stat-label">⭐ Kokemusbonus (XP):</span>
+                  <span class="stat-arvo">{{ pilotti.statit.xpBonus > 0 ? `+${pilotti.statit.xpBonus}%` : '0%' }}</span>
+                </div>
+              </div>
+
+              <!-- SIJOITUS KONEESEEN -->
+              <div class="pilotti-sijoitus-osio">
+                <div class="sijoitus-otsikko">Lentokone:</div>
+                <!-- Jos ollaan valitsemassa tietylle koneelle pilottia -->
+                <div v-if="valittuKonePilotinAsetukseen !== null">
+                  <button 
+                    class="nappi mini-toiminto-nappi valitse-koneelle-nappi"
+                    @click="asetaPilottiKoneeseen(valittuKonePilotinAsetukseen, pilotti.id)"
+                  >
+                    ✓ Aseta koneeseen {{ koneenNimiIdlla(valittuKonePilotinAsetukseen) }}
+                  </button>
+                </div>
+                <!-- Yleinen valinta koneeseen -->
+                <div v-else class="kone-valinta-rivi">
+                  <select 
+                    class="pilotti-kone-select"
+                    :value="lentokoneet.find(k => k.pilottiId === pilotti.id)?.id || ''"
+                    @change="e => {
+                      const val = (e.target as HTMLSelectElement).value
+                      if (val) {
+                        asetaPilottiKoneeseen(Number(val), pilotti.id)
+                      } else {
+                        const current = lentokoneet.find(k => k.pilottiId === pilotti.id)
+                        if (current) asetaPilottiKoneeseen(current.id, null)
+                      }
+                    }"
+                  >
+                    <option value="">(Ei asetettu koneeseen / Vapaana)</option>
+                    <option v-for="k in lentokoneet" :key="k.id" :value="k.id">
+                      ✈️ {{ k.nimi }} {{ k.pilottiId === pilotti.id ? '(Asetettu tähän)' : '' }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- TOIMINTORIVI: PÄIVITYS & IRTISANOMINEN -->
+              <div class="pilotti-kortti-footer">
+                <div class="pilotti-footer-napit">
+                  <button 
+                    v-if="pilotti.id !== 'pilot_default' && pilotti.taso < pilotti.maxTaso"
+                    class="nappi-upgrade-pilotti"
+                    :disabled="(pilotti.paivitysValuutta === 'kulta' ? kulta < pilotti.paivitysHinta : rahat < pilotti.paivitysHinta) || toimintoLataus"
+                    @click="paivitaPilotti(pilotti)"
+                    title="Kouluta pilottia paremmaksi (parantaa statseja)"
+                  >
+                    <span>⭐ Kouluta tasolle {{ pilotti.taso + 1 }}</span>
+                    <span class="koulutus-hinnat">
+                      <span v-if="pilotti.paivitysValuutta === 'raha'">💶 {{ pilotti.paivitysHinta }} €</span>
+                      <span v-else>🟡 {{ pilotti.paivitysHinta }} kultaa</span>
+                    </span>
+                  </button>
+                  <div v-else-if="pilotti.id !== 'pilot_default' && pilotti.taso >= pilotti.maxTaso" class="max-taso-badge">
+                    ⭐ Maksimitaso saavutettu!
+                  </div>
+                  <div v-else class="oletus-pilotti-info">
+                    Peruslentäjä (Ei koulutettavissa)
+                  </div>
+
+                  <button 
+                    v-if="pilotti.id !== 'pilot_default'"
+                    class="nappi-irtisano"
+                    @click="irtisanoPilotti(pilotti)"
+                    title="Irtisano pilotti miehistöstä"
+                  >
+                    🗑️ Irtisano (+{{ Math.round(pilotti.hinta * 0.3) }} {{ pilotti.valuutta === 'kulta' ? 'kultaa' : '€' }})
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. REKRYTOINTITOIMISTO (KAUPPA) -->
+        <div v-else-if="pilottiValilehti === 'kauppa'" class="pilotti-sisalto">
+          <div class="rekry-ohje-banner">
+            <div class="rekry-ohje-teksti">
+              <strong>Uusia hakemuksia saapuu säännöllisesti:</strong> Hakijalista uusiutuu lentokenttien ja osakaupan tahdissa. Harvinaisemmat kapteenit ovat kalliimpia mutta tuovat valtavia etuja!
+            </div>
+            <div class="rekry-ajastin-laatikko">
+              ⏱️ Seuraavat hakijat: <strong>{{ muotoileAika(aikaSeuraavaanPaivitykseen) }}</strong>
+            </div>
+          </div>
+
+          <div v-if="kaupanPilotit && kaupanPilotit.length > 0" class="pilotti-grid">
+            <div 
+              v-for="p in kaupanPilotit" 
+              :key="p.id" 
+              class="pilotti-kortti kauppa-kortti"
+              :class="'kortti-' + p.harvinaisuus"
+            >
+              <div class="pilotti-kortti-header">
+                <div class="pilotti-kuva-alue">
+                  <span class="pilotti-iso-emoji">{{ p.avatar }}</span>
+                </div>
+                <div class="pilotti-paatiedot">
+                  <div class="pilotti-nimi-rivi">
+                    <h3 class="pilotti-nimi">{{ p.nimi }}</h3>
+                    <span class="harvinaisuus-tag" :class="'tag-' + p.harvinaisuus">
+                      {{ p.harvinaisuus }}
+                    </span>
+                  </div>
+                  <div class="pilotti-titteli">{{ p.titteli }}</div>
+                  <div class="pilotti-taso-rivi">
+                    <span class="taso-pala">⭐ Alkuperäistaso {{ p.taso }} (Max {{ p.maxTaso }})</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- LENTOBONUKSET -->
+              <div class="pilotti-statit-laatikko">
+                <div class="stat-otsikko">Aloitusbonukset:</div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': p.statit.nopeusBonus > 0 }">
+                  <span class="stat-label">⚡ Lentonopeus:</span>
+                  <span class="stat-arvo">+{{ p.statit.nopeusBonus }}%</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': p.statit.kulutusAlennus > 0 }">
+                  <span class="stat-label">⛽ Polttoainesäästö:</span>
+                  <span class="stat-arvo">-{{ p.statit.kulutusAlennus }}%</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': p.statit.tuloBonus > 0 }">
+                  <span class="stat-label">💶 Lipputulobonus:</span>
+                  <span class="stat-arvo">+{{ p.statit.tuloBonus }}%</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': p.statit.kultaBonus > 0 }">
+                  <span class="stat-label">🟡 Kultabonus:</span>
+                  <span class="stat-arvo">+{{ p.statit.kultaBonus }} kultaa</span>
+                </div>
+                <div class="stat-rivi" :class="{ 'on-aktiivinen': p.statit.xpBonus > 0 }">
+                  <span class="stat-label">⭐ XP-bonus:</span>
+                  <span class="stat-arvo">+{{ p.statit.xpBonus }}%</span>
+                </div>
+              </div>
+
+              <!-- HINTA JA PALKKAUS -->
+              <div class="kauppa-pilotti-footer">
+                <div class="pilotti-hinta-laatikko">
+                  <span v-if="p.valuutta === 'raha'" class="hinta-euro">💶 {{ p.hinta.toLocaleString() }} €</span>
+                  <span v-else class="hinta-kulta">🟡 {{ p.hinta }} kultaa</span>
+                </div>
+                <button 
+                  class="nappi-palkkaa"
+                  :disabled="(p.valuutta === 'kulta' ? kulta < p.hinta : rahat < p.hinta) || toimintoLataus"
+                  @click="ostaPilotti(p)"
+                  title="Palkkaa pilotti lentoyhtiöösi"
+                >
+                  ✍️ Palkkaa miehistöön
+                </button>
+              </div>
+
+            </div>
+          </div>
+          <div v-else class="pilotti-tyhja-tila">
+            <span class="tyhja-ikoni">🏢</span>
+            <h2>Ei avoimia hakemuksia</h2>
+            <p>Kaikki tarjolla olleet lentäjät on palkattu tai kierros on päättynyt. Uusia hakijoita saapuu seuraavassa päivityksessä!</p>
+          </div>
+        </div>
+
+        <div class="hangari-ala-sulje">
+          <button class="sulje-modal" @click="suljePilotit">Sulje pilottikeskus</button>
         </div>
       </div>
 
@@ -1325,6 +1681,31 @@ onUnmounted(() => {
           <button class="romuta-nappi" @click="romutaKone()">🗑️ Myy romuksi (500 €)</button>
         </div>
 
+        <!-- KONEEN PILOTTI -->
+        <div class="aktiivinen-pilotti-palkki" :class="'pilotti-reuna-' + haePilottiKoneelle(aktiivinenKone).harvinaisuus">
+          <div class="pilotti-palkki-vasen">
+            <span class="pilotti-palkki-kuva">{{ haePilottiKoneelle(aktiivinenKone).avatar }}</span>
+            <div class="pilotti-palkki-tiedot">
+              <div class="pilotti-palkki-nimi">
+                <strong>{{ haePilottiKoneelle(aktiivinenKone).nimi }}</strong>
+                <span class="harvinaisuus-tag mini" :class="'tag-' + haePilottiKoneelle(aktiivinenKone).harvinaisuus">{{ haePilottiKoneelle(aktiivinenKone).harvinaisuus }}</span>
+                <span class="pilotti-taso-badge">⭐ Taso {{ haePilottiKoneelle(aktiivinenKone).taso }}/{{ haePilottiKoneelle(aktiivinenKone).maxTaso }}</span>
+              </div>
+              <div class="pilotti-palkki-bonukset">
+                <span v-if="haePilottiKoneelle(aktiivinenKone).statit.nopeusBonus > 0" class="pilotti-bonus-pill nopeus">⚡ +{{ haePilottiKoneelle(aktiivinenKone).statit.nopeusBonus }}% nopeus</span>
+                <span v-if="haePilottiKoneelle(aktiivinenKone).statit.kulutusAlennus > 0" class="pilotti-bonus-pill kulutus">⛽ -{{ haePilottiKoneelle(aktiivinenKone).statit.kulutusAlennus }}% kulutus</span>
+                <span v-if="haePilottiKoneelle(aktiivinenKone).statit.tuloBonus > 0" class="pilotti-bonus-pill tulo">💶 +{{ haePilottiKoneelle(aktiivinenKone).statit.tuloBonus }}% tulot</span>
+                <span v-if="haePilottiKoneelle(aktiivinenKone).statit.kultaBonus > 0" class="pilotti-bonus-pill kulta">🟡 +{{ haePilottiKoneelle(aktiivinenKone).statit.kultaBonus }} kultaa</span>
+                <span v-if="haePilottiKoneelle(aktiivinenKone).statit.xpBonus > 0" class="pilotti-bonus-pill xp">⭐ +{{ haePilottiKoneelle(aktiivinenKone).statit.xpBonus }}% XP</span>
+                <span v-if="haePilottiKoneelle(aktiivinenKone).id === 'pilot_default'" class="pilotti-bonus-pill neutraali">Peruslentäjä (Ei erikoisbonuksia)</span>
+              </div>
+            </div>
+          </div>
+          <button class="nappi mini-toiminto-nappi" @click="avaaPilotit(aktiivinenKone.id)">
+            👨‍✈️ Vaihda pilotti
+          </button>
+        </div>
+
         <!-- LENTOKONEEN PÄIVITYSPANEELI -->
         <div class="upgrade-paneeli">
           <div class="lista-otsikko" style="margin-bottom: 10px;">🛠️ Päivitä konetta</div>
@@ -1586,7 +1967,7 @@ onUnmounted(() => {
     </div>
 
     <!-- TAKAISIN-NAPPI -->
-    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki || hangariAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
+    <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki || hangariAuki || pilotitAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>
   </div>
 </template>
 
@@ -3887,6 +4268,659 @@ h2 {
 .hangari-ala-sulje {
   margin-top: 10px;
   text-align: center;
+}
+
+/* ========================================================
+   PILOTTIJÄRJESTELMÄN TYYLIT
+   ======================================================== */
+
+.pilotit-nakyma {
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.pilotti-valinta-ohje-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(2, 132, 199, 0.2);
+  border: 1.5px solid #0284c7;
+  border-radius: 8px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  font-size: 0.95rem;
+  color: #e0f2fe;
+}
+
+.nappi-peruuta-valinta {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #cbd5e1;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.nappi-peruuta-valinta:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+  border-color: #ef4444;
+}
+
+.pilotti-tabit {
+  display: flex;
+  gap: 12px;
+  margin: 12px 0 20px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px;
+}
+
+.pilotti-tab-nappi {
+  background: rgba(30, 41, 59, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  padding: 8px 18px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.pilotti-tab-nappi:hover {
+  color: #f1f5f9;
+  background: rgba(51, 65, 85, 0.8);
+}
+
+.pilotti-tab-nappi.active {
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.25) 0%, rgba(2, 132, 199, 0.35) 100%);
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 14px rgba(56, 189, 248, 0.2);
+}
+
+.kauppa-ajastin-badge {
+  font-size: 0.78rem;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 2px 7px;
+  border-radius: 6px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* Pilottikortit & Grid */
+.pilotti-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.pilotti-kortti {
+  background: rgba(30, 41, 59, 0.75);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1.5px solid;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pilotti-kortti:hover {
+  transform: translateY(-2px);
+}
+
+/* Harvinaisuuksien teemat ja hehkut */
+.kortti-Tavallinen {
+  border-color: rgba(148, 163, 184, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.kortti-Harvinainen {
+  border-color: rgba(56, 189, 248, 0.55);
+  box-shadow: 0 4px 16px rgba(56, 189, 248, 0.15);
+}
+
+.kortti-Eeppinen {
+  border-color: rgba(192, 132, 252, 0.6);
+  box-shadow: 0 4px 20px rgba(192, 132, 252, 0.2);
+  background: linear-gradient(155deg, rgba(30, 41, 59, 0.8) 0%, rgba(88, 28, 135, 0.15) 100%);
+}
+
+.kortti-Legendaarinen {
+  border-color: rgba(245, 158, 11, 0.75);
+  box-shadow: 0 4px 24px rgba(245, 158, 11, 0.25);
+  background: linear-gradient(155deg, rgba(30, 41, 59, 0.85) 0%, rgba(120, 53, 15, 0.25) 100%);
+}
+
+.pilotti-kortti-header {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.pilotti-kuva-alue {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.8);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.pilotti-iso-emoji {
+  font-size: 2.2rem;
+  line-height: 1;
+}
+
+.pilotti-paatiedot {
+  flex: 1;
+  min-width: 0;
+}
+
+.pilotti-nimi-rivi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pilotti-nimi {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.pilotti-titteli {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.pilotti-taso-rivi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
+
+.taso-pala {
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.pilotti-tyyppi-teksti {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Harvinaisuustagit */
+.harvinaisuus-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.harvinaisuus-tag.mini {
+  font-size: 0.62rem;
+  padding: 1px 5px;
+}
+
+.tag-Tavallinen {
+  background: rgba(148, 163, 184, 0.2);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.tag-Harvinainen {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
+.tag-Eeppinen {
+  background: rgba(192, 132, 252, 0.2);
+  color: #d8b4fe;
+  border: 1px solid rgba(192, 132, 252, 0.5);
+}
+
+.tag-Legendaarinen {
+  background: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.3);
+}
+
+/* Stat-laatikko */
+.pilotti-statit-laatikko {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.stat-otsikko {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  color: #64748b;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.stat-rivi {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  padding: 3px 0;
+  color: #64748b;
+}
+
+.stat-rivi.on-aktiivinen {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.stat-rivi.on-aktiivinen .stat-arvo {
+  color: #38bdf8;
+}
+
+/* Sijoitus koneeseen */
+.pilotti-sijoitus-osio {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.sijoitus-otsikko {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-bottom: 6px;
+}
+
+.pilotti-kone-select {
+  width: 100%;
+  background: #0f172a;
+  color: #f1f5f9;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+}
+
+.pilotti-kone-select:focus {
+  border-color: #38bdf8;
+}
+
+.valitse-koneelle-nappi {
+  width: 100%;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #fff;
+  border: none;
+  padding: 8px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Footer & toiminnot */
+.pilotti-kortti-footer {
+  margin-top: auto;
+}
+
+.pilotti-footer-napit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nappi-upgrade-pilotti {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 0.82rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nappi-upgrade-pilotti:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.nappi-upgrade-pilotti:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.koulutus-hinnat {
+  display: flex;
+  gap: 6px;
+  font-size: 0.8rem;
+}
+
+.max-taso-badge {
+  text-align: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.oletus-pilotti-info {
+  text-align: center;
+  padding: 6px;
+  border-radius: 6px;
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+  font-size: 0.8rem;
+}
+
+.nappi-irtisano {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  align-self: flex-end;
+}
+
+.nappi-irtisano:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+  color: #fca5a5;
+}
+
+/* Rekrytointitoimisto banner & kauppa */
+.rekry-ohje-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  gap: 16px;
+}
+
+.rekry-ohje-teksti {
+  font-size: 0.88rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+.rekry-ajastin-laatikko {
+  font-size: 0.9rem;
+  color: #38bdf8;
+  white-space: nowrap;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.2);
+}
+
+.kauppa-pilotti-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 14px;
+  gap: 10px;
+}
+
+.pilotti-hinta-laatikko {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hinta-euro {
+  font-weight: 700;
+  color: #10b981;
+  font-size: 0.92rem;
+}
+
+.hinta-kulta {
+  font-weight: 700;
+  color: #f59e0b;
+  font-size: 0.82rem;
+}
+
+.nappi-palkkaa {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  padding: 8px 16px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.nappi-palkkaa:hover:not(:disabled) {
+  filter: brightness(1.15);
+  transform: translateY(-1px);
+}
+
+.nappi-palkkaa:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.pilotti-tyhja-tila {
+  text-align: center;
+  padding: 40px 20px;
+  color: #94a3b8;
+}
+
+/* Aktiivinen pilottipalkki lentokenttänäkymässä */
+.aktiivinen-pilotti-palkki {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(30, 41, 59, 0.85);
+  border: 1.5px solid;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+
+.pilotti-reuna-Tavallinen {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.pilotti-reuna-Harvinainen {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+}
+
+.pilotti-reuna-Eeppinen {
+  border-color: rgba(192, 132, 252, 0.65);
+  box-shadow: 0 0 12px rgba(192, 132, 252, 0.2);
+}
+
+.pilotti-reuna-Legendaarinen {
+  border-color: rgba(245, 158, 11, 0.75);
+  box-shadow: 0 0 14px rgba(245, 158, 11, 0.25);
+}
+
+.pilotti-palkki-vasen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pilotti-palkki-kuva {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.pilotti-palkki-tiedot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pilotti-palkki-nimi {
+  font-size: 0.95rem;
+  color: #f1f5f9;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pilotti-taso-badge {
+  font-size: 0.75rem;
+  color: #f59e0b;
+  font-weight: 600;
+}
+
+.pilotti-palkki-bonukset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pilotti-bonus-pill {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-weight: 600;
+}
+
+.pilotti-bonus-pill.nopeus {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+}
+
+.pilotti-bonus-pill.kulutus {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.pilotti-bonus-pill.tulo {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+}
+
+.pilotti-bonus-pill.kulta {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fde047;
+}
+
+.pilotti-bonus-pill.xp {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.pilotti-bonus-pill.neutraali {
+  background: rgba(100, 116, 139, 0.15);
+  color: #94a3b8;
+}
+
+/* Hangarissa näytettävä pilottilaatikko */
+.hangari-pilotti-laatikko {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 10px 0;
+  gap: 8px;
+}
+
+.hangari-pilotti-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hangari-pilotti-kuva {
+  font-size: 1.5rem;
+}
+
+.hangari-pilotti-tekstit {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hangari-pilotti-otsikko {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hangari-pilotti-nimi {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #f1f5f9;
+}
+
+.hangari-pilotti-bonukset {
+  font-size: 0.72rem;
+  color: #38bdf8;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.neutraali-bonus {
+  color: #64748b;
+}
+
+.hangari-vaihda-pilotti-nappi {
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.hangari-vaihda-pilotti-nappi:hover {
+  background: rgba(56, 189, 248, 0.3);
 }
 
 @media (max-width: 600px) {

@@ -1,4 +1,3 @@
-// server/game/gameEngine.ts
 import type {
   GameState,
   Lentokone,
@@ -7,7 +6,9 @@ import type {
   OsaTyyppi,
   KenttaData,
   Piirustus,
-  EtsintaRuutu
+  EtsintaRuutu,
+  Pilotti,
+  PilottiHarvinaisuus
 } from '../types'
 import {
   haeEtaisyys,
@@ -23,8 +24,351 @@ import {
   laskeReitinTiedot,
   laskeOsanHinta,
   tarvittavaXpTasonNostoon,
-  laskeTasoPalkinto
+  laskeTasoPalkinto,
+  OLETUS_PILOTTI,
+  haeKoneenPilotti
 } from './gameData'
+
+interface PilottiMalli {
+  nimi: string
+  titteli: string
+  kuvaus: string
+  avatar: string
+  harvinaisuus: PilottiHarvinaisuus
+  hinta: number
+  valuutta: 'raha' | 'kulta'
+  nopeusBonus: number
+  kulutusAlennus: number
+  tuloBonus: number
+  kultaBonus: number
+  xpBonus: number
+  paivitysHinta: number
+  paivitysValuutta: 'raha' | 'kulta'
+}
+
+export const PILOTTI_POHJAT: PilottiMalli[] = [
+  // TAVALLISET (Common)
+  {
+    nimi: 'Seppo Siipi',
+    titteli: 'Rauhallinen Reittilentäjä',
+    kuvaus: 'Perusvarma lentäjä. Pysyy tasaisessa kurssissa ja noudattaa ohjeita kirjaimellisesti.',
+    avatar: '🧑‍✈️',
+    harvinaisuus: 'tavallinen',
+    hinta: 450,
+    valuutta: 'raha',
+    nopeusBonus: 4,
+    kulutusAlennus: 4,
+    tuloBonus: 3,
+    kultaBonus: 0,
+    xpBonus: 5,
+    paivitysHinta: 300,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Maija Mittari',
+    titteli: 'Tarkka Teknillinen',
+    kuvaus: 'Tarkistaa kaikki polttoaineventtiilit kahdesti. Säästää jokaisen bensiinilitran.',
+    avatar: '👩‍✈️',
+    harvinaisuus: 'tavallinen',
+    hinta: 600,
+    valuutta: 'raha',
+    nopeusBonus: 2,
+    kulutusAlennus: 9,
+    tuloBonus: 2,
+    kultaBonus: 0,
+    xpBonus: 6,
+    paivitysHinta: 350,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Jarkko Jarruton',
+    titteli: 'Vauhtiveikko',
+    kuvaus: 'Työntää tehovipua eteenpäin aina kun silmä välttää. Lentää ripeästi perille.',
+    avatar: '👨‍✈️',
+    harvinaisuus: 'tavallinen',
+    hinta: 550,
+    valuutta: 'raha',
+    nopeusBonus: 8,
+    kulutusAlennus: 0,
+    tuloBonus: 2,
+    kultaBonus: 0,
+    xpBonus: 8,
+    paivitysHinta: 350,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Liisa Lempeä',
+    titteli: 'Asiakaspalveluässä',
+    kuvaus: 'Toivottaa matkustajat tervetulleeksi hymyssä suin ja tarjoaa kahvia. Matkustajat maksavat mielellään.',
+    avatar: '👩‍✈️',
+    harvinaisuus: 'tavallinen',
+    hinta: 650,
+    valuutta: 'raha',
+    nopeusBonus: 2,
+    kulutusAlennus: 3,
+    tuloBonus: 8,
+    kultaBonus: 0,
+    xpBonus: 7,
+    paivitysHinta: 400,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Antti Aamuvirkku',
+    titteli: 'Lentoperämies',
+    kuvaus: 'Herää aina kello 4 aamulla. Valmistelee nousun ajoissa ja säästää kallista lentoaikaa.',
+    avatar: '🧑‍✈️',
+    harvinaisuus: 'tavallinen',
+    hinta: 500,
+    valuutta: 'raha',
+    nopeusBonus: 5,
+    kulutusAlennus: 5,
+    tuloBonus: 4,
+    kultaBonus: 0,
+    xpBonus: 6,
+    paivitysHinta: 320,
+    paivitysValuutta: 'raha'
+  },
+
+  // HARVINAISET (Rare)
+  {
+    nimi: 'Kari Kiituri',
+    titteli: 'Taitolentomestari',
+    kuvaus: 'Entinen taitolentäjä. Oikaisee mutkat ja löytää nopeimmat ilmavirtaukset.',
+    avatar: '⚡',
+    harvinaisuus: 'harvinainen',
+    hinta: 1800,
+    valuutta: 'raha',
+    nopeusBonus: 14,
+    kulutusAlennus: 6,
+    tuloBonus: 8,
+    kultaBonus: 5,
+    xpBonus: 12,
+    paivitysHinta: 900,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Laura Lentotähti',
+    titteli: 'VIP-Kapteeni',
+    kuvaus: 'Karismaattinen lentokapteeni. Matkustajat kilpailevat paikoista hänen lennoilleen.',
+    avatar: '🌟',
+    harvinaisuus: 'harvinainen',
+    hinta: 2400,
+    valuutta: 'raha',
+    nopeusBonus: 8,
+    kulutusAlennus: 8,
+    tuloBonus: 18,
+    kultaBonus: 8,
+    xpBonus: 15,
+    paivitysHinta: 1100,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Topi Turbiini',
+    titteli: 'Polttoaineguru',
+    kuvaus: 'Laskee siipien optimaalisen nosteen silmämääräisesti. Polttoainelasku puolittuu.',
+    avatar: '⛽',
+    harvinaisuus: 'harvinainen',
+    hinta: 2100,
+    valuutta: 'raha',
+    nopeusBonus: 8,
+    kulutusAlennus: 16,
+    tuloBonus: 6,
+    kultaBonus: 5,
+    xpBonus: 10,
+    paivitysHinta: 950,
+    paivitysValuutta: 'raha'
+  },
+  {
+    nimi: 'Veera Vakaa',
+    titteli: 'Myrskynkesyttäjä',
+    kuvaus: 'Kylmähermoinen ammattilainen. Lentää turbulenssin halki kuin pehmeällä tyynyllä.',
+    avatar: '🧭',
+    harvinaisuus: 'harvinainen',
+    hinta: 5,
+    valuutta: 'kulta',
+    nopeusBonus: 12,
+    kulutusAlennus: 12,
+    tuloBonus: 10,
+    kultaBonus: 10,
+    xpBonus: 16,
+    paivitysHinta: 2,
+    paivitysValuutta: 'kulta'
+  },
+
+  // EEPPISET (Epic)
+  {
+    nimi: 'Kapteeni Myrskynsilmä',
+    titteli: 'Ukkosen Valtias',
+    kuvaus: 'Ei kierrä säärintamia. Syö salamoita aamiaiseksi ja saapuu aina etuajassa.',
+    avatar: '⛈️',
+    harvinaisuus: 'eeppinen',
+    hinta: 16,
+    valuutta: 'kulta',
+    nopeusBonus: 22,
+    kulutusAlennus: 15,
+    tuloBonus: 15,
+    kultaBonus: 15,
+    xpBonus: 25,
+    paivitysHinta: 5,
+    paivitysValuutta: 'kulta'
+  },
+  {
+    nimi: 'Aura Ässä',
+    titteli: 'Hävittäjälegenda',
+    kuvaus: 'Yli 10 000 lentotuntia. Ohjaa matkustajakonetta kuin suihkuhävittäjää.',
+    avatar: '🎖️',
+    harvinaisuus: 'eeppinen',
+    hinta: 18,
+    valuutta: 'kulta',
+    nopeusBonus: 26,
+    kulutusAlennus: 12,
+    tuloBonus: 20,
+    kultaBonus: 12,
+    xpBonus: 28,
+    paivitysHinta: 6,
+    paivitysValuutta: 'kulta'
+  },
+  {
+    nimi: 'Kustaa Kultasiipi',
+    titteli: 'Kultakeisari',
+    kuvaus: 'Löytää rikkaimmat lentoreitit ja neuvottelee kultamatkustajilta muhkeat lisämaksut.',
+    avatar: '🟡',
+    harvinaisuus: 'eeppinen',
+    hinta: 20,
+    valuutta: 'kulta',
+    nopeusBonus: 14,
+    kulutusAlennus: 14,
+    tuloBonus: 28,
+    kultaBonus: 30,
+    xpBonus: 20,
+    paivitysHinta: 7,
+    paivitysValuutta: 'kulta'
+  },
+  {
+    nimi: 'Elena Eko',
+    titteli: 'Ilmavirtojen Mestari',
+    kuvaus: 'Hyödyntää suihkuvirtauksia ja liitää pitkiä matkoja ilman moottorin rasitusta.',
+    avatar: '🌿',
+    harvinaisuus: 'eeppinen',
+    hinta: 17,
+    valuutta: 'kulta',
+    nopeusBonus: 18,
+    kulutusAlennus: 25,
+    tuloBonus: 16,
+    kultaBonus: 15,
+    xpBonus: 22,
+    paivitysHinta: 5,
+    paivitysValuutta: 'kulta'
+  },
+
+  // LEGENDAARISET (Legendary)
+  {
+    nimi: 'Maverick Muukalainen',
+    titteli: 'Taivaiden Ykkösässä',
+    kuvaus: 'Painovoima ja fysiikan lait ovat hänelle vain suosituksia. Huippunopeus ja huikeat tulot.',
+    avatar: '🕶️',
+    harvinaisuus: 'legendaarinen',
+    hinta: 40,
+    valuutta: 'kulta',
+    nopeusBonus: 36,
+    kulutusAlennus: 24,
+    tuloBonus: 32,
+    kultaBonus: 25,
+    xpBonus: 40,
+    paivitysHinta: 10,
+    paivitysValuutta: 'kulta'
+  },
+  {
+    nimi: 'Kyber-Koneistaja 9000',
+    titteli: 'Kvanttitekoäly',
+    kuvaus: 'Algoritminen huippulentäjä. Optimoi lentoradan atomintarkasti reaaliajassa.',
+    avatar: '🤖',
+    harvinaisuus: 'legendaarinen',
+    hinta: 45,
+    valuutta: 'kulta',
+    nopeusBonus: 40,
+    kulutusAlennus: 32,
+    tuloBonus: 26,
+    kultaBonus: 20,
+    xpBonus: 45,
+    paivitysHinta: 12,
+    paivitysValuutta: 'kulta'
+  },
+  {
+    nimi: 'Paroni von Richthofen',
+    titteli: 'Ilmojen Keisari',
+    kuvaus: 'Historian maineikkain lentäjä. Pelkkä hänen nimensä täyttää matkustamolauteet ääriään myöten.',
+    avatar: '👑',
+    harvinaisuus: 'legendaarinen',
+    hinta: 50,
+    valuutta: 'kulta',
+    nopeusBonus: 32,
+    kulutusAlennus: 25,
+    tuloBonus: 42,
+    kultaBonus: 35,
+    xpBonus: 50,
+    paivitysHinta: 14,
+    paivitysValuutta: 'kulta'
+  }
+]
+
+export function generoiKaupanPilotit(count = 3, pelaajanTaso = 1): Pilotti[] {
+  const maara = Math.max(2, Math.min(5, count))
+  const uudetPilotit: Pilotti[] = []
+  const arvotutNimet = new Set<string>()
+  let safety = 0
+
+  while (uudetPilotit.length < maara && safety++ < 60) {
+    // Harvinaisuuksien todennäköisyydet tason mukaan
+    const roll = Math.random() * 100
+    let haluttuHarvinaisuus: PilottiHarvinaisuus = 'tavallinen'
+    
+    const legendaryChance = Math.min(10, 2 + pelaajanTaso * 0.5)
+    const epicChance = Math.min(22, 6 + pelaajanTaso * 1.0)
+    const rareChance = Math.min(38, 22 + pelaajanTaso * 1.2)
+
+    if (roll < legendaryChance && pelaajanTaso >= 3) {
+      haluttuHarvinaisuus = 'legendaarinen'
+    } else if (roll < legendaryChance + epicChance && pelaajanTaso >= 2) {
+      haluttuHarvinaisuus = 'eeppinen'
+    } else if (roll < legendaryChance + epicChance + rareChance) {
+      haluttuHarvinaisuus = 'harvinainen'
+    } else {
+      haluttuHarvinaisuus = 'tavallinen'
+    }
+
+    const sopivatPohjat = PILOTTI_POHJAT.filter(p => p.harvinaisuus === haluttuHarvinaisuus && !arvotutNimet.has(p.nimi))
+    const valittuPohja = sopivatPohjat.length > 0 
+      ? sopivatPohjat[Math.floor(Math.random() * sopivatPohjat.length)]
+      : PILOTTI_POHJAT.filter(p => !arvotutNimet.has(p.nimi))[0] || PILOTTI_POHJAT[Math.floor(Math.random() * PILOTTI_POHJAT.length)]
+
+    arvotutNimet.add(valittuPohja.nimi)
+    uudetPilotit.push({
+      id: `pilot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      nimi: valittuPohja.nimi,
+      titteli: valittuPohja.titteli,
+      kuvaus: valittuPohja.kuvaus,
+      avatar: valittuPohja.avatar,
+      harvinaisuus: valittuPohja.harvinaisuus,
+      taso: 1,
+      maxTaso: 5,
+      hinta: valittuPohja.hinta,
+      valuutta: valittuPohja.valuutta,
+      statit: {
+        nopeusBonus: valittuPohja.nopeusBonus,
+        kulutusAlennus: valittuPohja.kulutusAlennus,
+        tuloBonus: valittuPohja.tuloBonus,
+        kultaBonus: valittuPohja.kultaBonus,
+        xpBonus: valittuPohja.xpBonus
+      },
+      koneId: null,
+      paivitysHinta: valittuPohja.paivitysHinta,
+      paivitysValuutta: valittuPohja.paivitysValuutta
+    })
+  }
+
+  return uudetPilotit
+}
 
 export function generoiKaupanOsat(count = 4, pelaajanTaso = 1): Osa[] {
   const maara = Math.max(2, Math.min(6, count))
@@ -308,7 +652,9 @@ export function luoAlkutila(userId: string, username: string): GameState {
     lastUpdated: now,
     lastEtsintaAt: 0,
     etsintaCooldownJaljella: 0,
-    etsintaRuudut: generoiEtsintaRuudut(1)
+    etsintaRuudut: generoiEtsintaRuudut(1),
+    pilotit: [OLETUS_PILOTTI],
+    kaupanPilotit: generoiKaupanPilotit(3, 1)
   }
 }
 
@@ -319,15 +665,21 @@ export function luoAlkutila(userId: string, username: string): GameState {
 export function tickGameState(state: GameState, nowMs = Date.now()): { state: GameState, events: string[] } {
   const events: string[] = []
 
-  // Varmistetaan tason ja xp:n alustus
+  // Varmistetaan tason, xp:n ja pilottien alustus
   if (typeof state.taso !== 'number' || state.taso < 1) state.taso = 1
   if (typeof state.xp !== 'number' || state.xp < 0) state.xp = 0
+  if (!state.pilotit || !Array.isArray(state.pilotit) || state.pilotit.length === 0) {
+    state.pilotit = [OLETUS_PILOTTI]
+  }
+  if (!state.kaupanPilotit || !Array.isArray(state.kaupanPilotit)) {
+    state.kaupanPilotit = generoiKaupanPilotit(3, state.taso || 1)
+  }
 
   // 1. Hätäapujäähy
   const cooldownEnd = (state.lastHataapuClaimedAt || 0) + 180000
   state.hataapuCooldownJaljella = Math.max(0, Math.ceil((cooldownEnd - nowMs) / 1000))
 
-  // 2. Matkustajien ja osien päivitysjakso (180 s / 3 min)
+  // 2. Matkustajien, osien ja pilottien päivitysjakso (180 s / 3 min)
   const refreshIntervalMs = 180000
   if (!state.lastPassengerRefreshAt) {
     state.lastPassengerRefreshAt = nowMs
@@ -349,8 +701,9 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
     })
     state.matkustajaIdCounter = counterRef.current
     state.kaupanOsat = generoiKaupanOsat(Math.floor(Math.random() * 4) + 2, state.taso || 1)
+    state.kaupanPilotit = generoiKaupanPilotit(3, state.taso || 1)
     state.lastPassengerRefreshAt = nowMs
-    events.push("Lentokenttien matkustajat ja kaupan osat päivitetty!")
+    events.push("Lentokenttien matkustajat, kaupan osat ja uudet rekrytoitavat pilotit päivitetty!")
   } else if (Array.isArray(state.kaupanOsat)) {
     // Siivotaan kaupasta mahdolliset liian korkean tason osat (esim. vanha tallennus)
     const sallitut = state.kaupanOsat.filter(osa => {
@@ -370,6 +723,9 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
   // 3. Lentojen eteneminen ja laskeutuminen
   state.lentokoneet.forEach(kone => {
     if (kone.tila !== "Ilmassa") return
+
+    // Haetaan koneen nykyinen pilotti
+    const pilotti = haeKoneenPilotti(kone, state.pilotit)
 
     // Jos koneella ei ole vielä aikaleimoja (esim. vanha tallennus), alustetaan ne
     if (!kone.arrivalAt) {
@@ -393,12 +749,14 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
           const lahto = m.lahtoKentta || saavuttuKentta
           let tulo = haeEtaisyys(lahto, m.kohde) * 0.35
           if (kone.onBonusLento) tulo *= 1.25
+          if (pilotti.statit.tuloBonus > 0) tulo *= (1 + pilotti.statit.tuloBonus / 100)
           lennonTulot += Math.ceil(tulo)
           state.tilastot.kuljetutMatkustajat++
 
           if (m.tuottaaKultaa) {
             let saatuKulta = (m.kultaMaara || 1)
             if (kone.onBonusLento) saatuKulta *= 1.25
+            if (pilotti.statit.kultaBonus > 0) saatuKulta *= (1 + pilotti.statit.kultaBonus / 100)
             lennonKulta += Math.ceil(saatuKulta)
           }
         } else {
@@ -415,8 +773,9 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
         state.tilastot.keratytKullat += lennonKulta
       }
 
-      // XP ja tason nousu lennon pituuden mukaan
-      const lennonXp = Math.max(10, Math.round(kone.currentLegDistance || 100))
+      // XP ja tason nousu lennon pituuden ja pilotin mukaan
+      const xpKerroin = 1 + (pilotti.statit.xpBonus || 0) / 100
+      const lennonXp = Math.max(10, Math.round((kone.currentLegDistance || 100) * xpKerroin))
       state.xp = (state.xp || 0) + lennonXp
 
       let tarvittava = tarvittavaXpTasonNostoon(state.taso)
@@ -431,18 +790,20 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
       }
 
       events.push(
-        `Kone ${kone.nimi} saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''} (+${lennonXp} XP).`
+        `Kone ${kone.nimi} (${pilotti.avatar} ${pilotti.nimi}) saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''} (+${lennonXp} XP).`
       )
 
       // Siirrytään reitillä eteenpäin
       kone.reitti.shift()
 
       if (kone.reitti.length > 0) {
-        // Seuraava etappi
+        // Seuraava etappi - pilotin nopeusbonus vaikuttaa
         const edellinenArrival: number = kone.arrivalAt || nowMs
         kone.kohde = kone.reitti[0]
         const matka = haeEtaisyys(saavuttuKentta, kone.kohde)
-        const uusiAikaTunteina = matka / kone.nopeus
+        const nopeusBonus = pilotti?.statit?.nopeusBonus || 0
+        const tehokasNopeus = Math.max(10, Math.round(kone.nopeus * (1 + nopeusBonus / 100)))
+        const uusiAikaTunteina = matka / tehokasNopeus
         const kestoSek = Math.max(5, Math.round(uusiAikaTunteina * 80))
         
         kone.departedAt = edellinenArrival
@@ -824,7 +1185,8 @@ export function suoritaToiminto(
       }
 
       const lahtoKentta = kone.sijainti
-      const tiedot = laskeReitinTiedot(kone, lahtoKentta, route)
+      const pilotti = haeKoneenPilotti(kone, state.pilotit)
+      const tiedot = laskeReitinTiedot(kone, lahtoKentta, route, pilotti)
 
       if (state.rahat < tiedot.kulut) {
         return { success: false, message: `Rahat eivät riitä polttoainekuluihin (tarvitaan ${tiedot.kulut} €)`, state }
@@ -843,7 +1205,9 @@ export function suoritaToiminto(
       kone.onBonusLento = tiedot.isBonus
 
       const ekaMatka = haeEtaisyys(lahtoKentta, route[0])
-      const ekaAikaTunteina = ekaMatka / kone.nopeus
+      const nopeusBonus = pilotti?.statit?.nopeusBonus || 0
+      const tehokasNopeus = Math.max(10, Math.round(kone.nopeus * (1 + nopeusBonus / 100)))
+      const ekaAikaTunteina = ekaMatka / tehokasNopeus
       const kestoSek = Math.max(5, Math.round(ekaAikaTunteina * 80))
 
       kone.departedAt = nowMs
@@ -854,7 +1218,7 @@ export function suoritaToiminto(
 
       return {
         success: true,
-        message: `Kone ${kone.nimi} lähti matkaan kohti kenttää ${kone.kohde}!`,
+        message: `Kone ${kone.nimi} (${pilotti.avatar} ${pilotti.nimi}) lähti matkaan kohti kenttää ${kone.kohde}!`,
         state
       }
     }
@@ -897,6 +1261,172 @@ export function suoritaToiminto(
       }
 
       return { success: true, message: loytoViesti, state }
+    }
+
+    case 'buy-pilot': {
+      const { pilotId } = payload || {}
+      if (!Array.isArray(state.kaupanPilotit)) {
+        state.kaupanPilotit = generoiKaupanPilotit(3, state.taso || 1)
+      }
+      const pilotIdx = state.kaupanPilotit.findIndex(p => p.id === pilotId)
+      if (pilotIdx === -1) {
+        return { success: false, message: 'Pilottia ei löydy rekrytoinnista', state }
+      }
+      const pilotti = state.kaupanPilotit[pilotIdx]
+
+      if (pilotti.valuutta === 'kulta') {
+        if (state.kulta < pilotti.hinta) {
+          return { success: false, message: `Ei tarpeeksi kultaa (tarvitaan ${pilotti.hinta} kultaa)`, state }
+        }
+        state.kulta -= pilotti.hinta
+      } else {
+        if (state.rahat < pilotti.hinta) {
+          return { success: false, message: `Ei tarpeeksi rahaa (tarvitaan ${pilotti.hinta} €)`, state }
+        }
+        state.rahat -= pilotti.hinta
+      }
+
+      state.kaupanPilotit.splice(pilotIdx, 1)
+      if (!Array.isArray(state.pilotit)) {
+        state.pilotit = [OLETUS_PILOTTI]
+      }
+      pilotti.koneId = null
+      state.pilotit.push(pilotti)
+
+      return {
+        success: true,
+        message: `Palkkasit pilotin ${pilotti.nimi} (${pilotti.avatar} ${pilotti.titteli})! Voit nyt asettaa hänet koneeseen.`,
+        state
+      }
+    }
+
+    case 'assign-pilot': {
+      const { planeId, pilotId } = payload || {}
+      const kone = state.lentokoneet.find(k => k.id === planeId)
+      if (!kone) {
+        return { success: false, message: 'Lentokonetta ei löydy', state }
+      }
+      if (!Array.isArray(state.pilotit)) {
+        state.pilotit = [OLETUS_PILOTTI]
+      }
+
+      // Jos pilotId on null tai OLETUS_PILOTTI: vapautetaan kone oletuslentäjälle
+      if (!pilotId || pilotId === OLETUS_PILOTTI.id) {
+        if (kone.pilottiId) {
+          const vanha = state.pilotit.find(p => p.id === kone.pilottiId)
+          if (vanha) vanha.koneId = null
+        }
+        kone.pilottiId = null
+        return { success: true, message: `Koneen ${kone.nimi} puikkoihin asetettiin Timo Tylsä (oletus)`, state }
+      }
+
+      const uusiPilotti = state.pilotit.find(p => p.id === pilotId)
+      if (!uusiPilotti) {
+        return { success: false, message: 'Pilottia ei löydy omistamistasi piloteista', state }
+      }
+
+      // Jos uusi pilotti oli jo toisessa koneessa, vapautetaan se toinen kone
+      if (uusiPilotti.koneId && uusiPilotti.koneId !== planeId) {
+        const toinenKone = state.lentokoneet.find(k => k.id === uusiPilotti.koneId)
+        if (toinenKone) toinenKone.pilottiId = null
+      }
+
+      // Jos tässä koneessa oli aiempi pilotti, vapautetaan se
+      if (kone.pilottiId && kone.pilottiId !== pilotId) {
+        const vanha = state.pilotit.find(p => p.id === kone.pilottiId)
+        if (vanha) vanha.koneId = null
+      }
+
+      kone.pilottiId = uusiPilotti.id
+      uusiPilotti.koneId = planeId
+
+      return {
+        success: true,
+        message: `${uusiPilotti.avatar} ${uusiPilotti.nimi} asetettiin koneen ${kone.nimi} kapteeniksi!`,
+        state
+      }
+    }
+
+    case 'upgrade-pilot': {
+      const { pilotId } = payload || {}
+      if (!Array.isArray(state.pilotit)) {
+        state.pilotit = [OLETUS_PILOTTI]
+      }
+      const pilotti = state.pilotit.find(p => p.id === pilotId)
+      if (!pilotti) {
+        return { success: false, message: 'Pilottia ei löydy', state }
+      }
+      if (pilotti.id === OLETUS_PILOTTI.id) {
+        return { success: false, message: 'Timo Tylsää ei voi päivittää. Palkkaa uusia pilotteja rekrytoinnista!', state }
+      }
+      if (pilotti.taso >= (pilotti.maxTaso || 5)) {
+        return { success: false, message: `${pilotti.nimi} on jo saavuttanut maksimitason!`, state }
+      }
+
+      if (pilotti.paivitysValuutta === 'kulta') {
+        if (state.kulta < pilotti.paivitysHinta) {
+          return { success: false, message: `Ei tarpeeksi kultaa päivitykseen (tarvitaan ${pilotti.paivitysHinta} kultaa)`, state }
+        }
+        state.kulta -= pilotti.paivitysHinta
+      } else {
+        if (state.rahat < pilotti.paivitysHinta) {
+          return { success: false, message: `Ei tarpeeksi rahaa päivitykseen (tarvitaan ${pilotti.paivitysHinta} €)`, state }
+        }
+        state.rahat -= pilotti.paivitysHinta
+      }
+
+      // Nostetaan statseja harvinaisuuden mukaan
+      pilotti.taso++
+      const boost = pilotti.harvinaisuus === 'legendaarinen' ? 5 : (pilotti.harvinaisuus === 'eeppinen' ? 4 : (pilotti.harvinaisuus === 'harvinainen' ? 3 : 2))
+      if (pilotti.statit.nopeusBonus > 0) pilotti.statit.nopeusBonus += boost
+      if (pilotti.statit.kulutusAlennus > 0) pilotti.statit.kulutusAlennus += boost
+      if (pilotti.statit.tuloBonus > 0) pilotti.statit.tuloBonus += boost
+      if (pilotti.statit.kultaBonus > 0) pilotti.statit.kultaBonus += Math.max(1, Math.round(boost * 0.7))
+      if (pilotti.statit.xpBonus > 0) pilotti.statit.xpBonus += boost + 1
+
+      // Uusi päivityshinta
+      if (pilotti.paivitysValuutta === 'kulta') {
+        pilotti.paivitysHinta = Math.max(2, Math.round(pilotti.paivitysHinta * 1.5))
+      } else {
+        pilotti.paivitysHinta = Math.round(pilotti.paivitysHinta * 1.6)
+      }
+
+      return {
+        success: true,
+        message: `🎉 ${pilotti.avatar} ${pilotti.nimi} päivitettiin tasolle ${pilotti.taso}! Bonukset paranivat ⭐`,
+        state
+      }
+    }
+
+    case 'fire-pilot': {
+      const { pilotId } = payload || {}
+      if (!Array.isArray(state.pilotit)) return { success: false, message: 'Pilotteja ei löydy', state }
+      if (pilotId === OLETUS_PILOTTI.id) {
+        return { success: false, message: 'Timo Tylsää ei voi irtisanoa!', state }
+      }
+      const idx = state.pilotit.findIndex(p => p.id === pilotId)
+      if (idx === -1) {
+        return { success: false, message: 'Pilottia ei löydy', state }
+      }
+      const [poistettu] = state.pilotit.splice(idx, 1)
+      if (poistettu.koneId) {
+        const kone = state.lentokoneet.find(k => k.id === poistettu.koneId)
+        if (kone) kone.pilottiId = null
+      }
+
+      // Pieni erorahapalkkio (30% perushinnasta)
+      const hyvitys = Math.round(poistettu.hinta * 0.3)
+      if (poistettu.valuutta === 'kulta') {
+        state.kulta += Math.max(1, hyvitys)
+      } else {
+        state.rahat += Math.max(100, hyvitys)
+      }
+
+      return {
+        success: true,
+        message: `Irtisanoit pilotin ${poistettu.nimi}. Sait erorahana ${hyvitys} ${poistettu.valuutta === 'kulta' ? 'kultaa' : '€'}.`,
+        state
+      }
     }
 
     default:

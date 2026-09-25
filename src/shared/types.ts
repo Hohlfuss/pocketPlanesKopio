@@ -11,6 +11,33 @@ export interface Matkustaja {
   kultaMaara?: number
 }
 
+export type PilottiHarvinaisuus = 'tavallinen' | 'harvinainen' | 'eeppinen' | 'legendaarinen'
+
+export interface PilottiStatit {
+  nopeusBonus: number      // Esim. +5% nopeuteen (lyhentää lentoaikaa)
+  kulutusAlennus: number   // Esim. -8% polttoainekuluihin
+  tuloBonus: number        // Esim. +10% lipputuloihin (rahat)
+  kultaBonus: number       // Esim. +10% kultatuottoon kultamatkustajista
+  xpBonus: number          // Esim. +15% XP-ansioon lennoilta
+}
+
+export interface Pilotti {
+  id: string
+  nimi: string
+  titteli: string
+  kuvaus: string
+  avatar: string
+  harvinaisuus: PilottiHarvinaisuus
+  taso: number
+  maxTaso: number
+  hinta: number
+  valuutta: 'raha' | 'kulta'
+  statit: PilottiStatit
+  koneId?: number | null
+  paivitysHinta: number
+  paivitysValuutta: 'raha' | 'kulta'
+}
+
 export interface Lentokone {
   id: number
   nimi: string
@@ -33,6 +60,7 @@ export interface Lentokone {
   kulutusTaso: number
   tilavuusTaso: number
   currentLegDistance?: number
+  pilottiId?: string | null
 }
 
 export interface KenttaData {
@@ -117,6 +145,8 @@ export interface GameState {
   lastEtsintaAt: number
   etsintaCooldownJaljella: number
   etsintaRuudut: EtsintaRuutu[]
+  pilotit: Pilotti[]
+  kaupanPilotit: Pilotti[]
 }
 
 export type GameActionType =
@@ -133,6 +163,10 @@ export type GameActionType =
   | 'load-destination-passengers'
   | 'dispatch-plane'
   | 'avaa-etsinta-ruutu'
+  | 'buy-pilot'
+  | 'assign-pilot'
+  | 'upgrade-pilot'
+  | 'fire-pilot'
 
 export interface GameActionPayload {
   action: GameActionType

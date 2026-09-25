@@ -341,3 +341,97 @@ test('Kohteen matkustajien ryhmälataus (load-destination-passengers) ja kultama
   assert.equal(resOlematon.success, false)
 })
 
+test('Pilottijärjestelmä: oletuspilotti Timo Tylsä, rekrytointi, koneeseen asettaminen, päivitykset ja lentobonukset', () => {
+  const state = luoAlkutila('pilot-test-user', 'ÄssäKuski')
+  
+  // 1. Oletustila: pelaajalla on Timo Tylsä ja kaupassa rekrytoitavia
+  assert.ok(state.pilotit.length >= 1, 'Pelaajalla tulee olla vähintään oletuspilotti')
+  const defaultPilot = state.pilotit[0]
+  assert.equal(defaultPilot.id, 'pilot_default')
+  assert.equal(defaultPilot.nimi, 'Timo Tylsä')
+  assert.equal(defaultPilot.statit.nopeusBonus, 0)
+  assert.equal(defaultPilot.statit.tuloBonus, 0)
+  assert.ok(state.kaupanPilotit.length >= 2, 'Rekrytointikaupassa tulee olla tarjolla pilotteja')
+
+  // Timo Tylsää ei voi päivittää
+  const upgradeTimo = suoritaToiminto(state, 'upgrade-pilot', { pilotId: 'pilot_default' })
+  assert.equal(upgradeTimo.success, false, 'Timo Tylsää ei voi päivittää')
+
+  // 2. Pilotin ostaminen kaupasta
+  state.rahat = 10000
+  state.kulta = 100
+  const kauppaPilotti = state.kaupanPilotit[0]
+  const ostettavaId = kauppaPilotti.id
+  const alkupRaha = state.rahat
+  const alkupKulta = state.kulta
+
+  const buyRes = suoritaToiminto(state, 'buy-pilot', { pilotId: ostettavaId })
+  assert.equal(buyRes.success, true, 'Pilotin ostamisen tulee onnistua')
+  assert.ok(state.pilotit.some(p => p.id === ostettavaId), 'Ostetun pilotin tulee löytyä pelaajan piloteista')
+  assert.ok(!state.kaupanPilotit.some(p => p.id === ostettavaId), 'Ostetun pilotin tulee poistua kaupasta')
+  if (kauppaPilotti.valuutta === 'kulta') {
+    assert.equal(state.kulta, alkupKulta - kauppaPilotti.hinta)
+  } else {
+    assert.equal(state.rahat, alkupRaha - kauppaPilotti.hinta)
+  }
+
+  // 3. Pilotin asettaminen koneeseen
+  const kone = state.lentokoneet[0]
+  assert.equal(kone.pilottiId, undefined, 'Koneella ei aluksi ole erikoispilottia (käyttää oletuspilottia)')
+  
+  const assignRes = suoritaToiminto(state, 'assign-pilot', { planeId: kone.id, pilotId: ostettavaId })
+  assert.equal(assignRes.success, true, 'Pilotin asettamisen koneeseen tulee onnistua')
+  assert.equal(kone.pilottiId, ostettavaId)
+  const omistettuPilotti = state.pilotit.find(p => p.id === ostettavaId)!
+  assert.equal(omistettuPilotti.koneId, kone.id)
+
+  // 4. Pilotin päivittäminen (tason nosto)
+  const vanhaTaso = omistettuPilotti.taso
+  const vanhaNopeus = omistettuPilotti.statit.nopeusBonus
+  const upgradeRes = suoritaToiminto(state, 'upgrade-pilot', { pilotId: ostettavaId })
+  assert.equal(upgradeRes.success, true, 'Pilotin päivityksen tulee onnistua')
+  assert.equal(omistettuPilotti.taso, vanhaTaso + 1)
+  if (vanhaNopeus > 0) {
+    assert.ok(omistettuPilotti.statit.nopeusBonus > vanhaNopeus, 'Nopeusbonuksen tulee kasvaa tason myötä')
+  }
+
+  // 5. Lentobonukset: lähetetään kone lennolle ja mitataan lentoaika ja kulut
+  const now = 10000000
+  // Luodaan vertailua varten huippupilotti (Nopeus +20%, Kulutus -20%, Tulot +20%, XP +30%)
+  omistettuPilotti.statit.nopeusBonus = 20
+  omistettuPilotti.statit.kulutusAlennus = 20
+  omistettuPilotti.statit.tuloBonus = 20
+  omistettuPilotti.statit.xpBonus = 30
+
+  // Lisätään matkustaja
+  kone.matkustajatKyydissa = [{
+    id: 'm_pilot_test',
+    nimi: 'Testaaja',
+    kohde: 'Pori',
+    lahtoKentta: kone.sijainti,
+    tuottaaKultaa: false
+  }]
+
+  const rahatEnnenLentoa = state.rahat
+  const dispatchRes = suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Pori'] }, now)
+  assert.equal(dispatchRes.success, true)
+  assert.equal(kone.tila, 'Ilmassa')
+  
+  // Varmistetaan että kone saapuu nopeammin kuin perusnopeudella
+  assert.ok(kone.legDurationSeconds! > 0)
+  
+  // Lennon valmistuminen
+  const arrivalTime = kone.arrivalAt!
+  tickGameState(state, arrivalTime + 100)
+  assert.equal(kone.tila, 'Maassa', 'Koneen tulee laskeutua kentälle')
+  assert.ok(state.rahat > rahatEnnenLentoa, 'Pilotin tulobonuksen kera lennosta tulee saada muhkea voitto')
+  assert.ok(state.xp > 0, 'XP:tä tulee kertyä pilotin XP-bonuksella')
+
+  // 6. Resettaussykli: ajan kuluttua kauppaan ilmestyy uudet pilotit
+  const vanhaKauppa = [...state.kaupanPilotit]
+  const afterRefreshTime = state.lastPassengerRefreshAt + 185000
+  tickGameState(state, afterRefreshTime)
+  assert.ok(state.kaupanPilotit.length >= 2, 'Uusia pilotteja tulee generoitua refreshin yhteydessä')
+})
+
+

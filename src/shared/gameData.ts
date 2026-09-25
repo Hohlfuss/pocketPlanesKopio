@@ -1,5 +1,5 @@
 // src/shared/gameData.ts
-import type { Piirustus, OstettavaKentta, KenttaData, Lentokone, Matkustaja } from './types'
+import type { Piirustus, OstettavaKentta, KenttaData, Lentokone, Matkustaja, Pilotti } from './types'
 
 export const kenttaKoordinaatit: Record<string, { x: number, y: number }> = {
   "Pirkkala": { x: 400, y: 720 },
@@ -147,7 +147,38 @@ export const laskeOsanHinta = (malliId: string): number => {
   return base + lisa
 }
 
-export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: string[]) => {
+export const OLETUS_PILOTTI: Pilotti = {
+  id: 'pilot_default',
+  nimi: 'Timo Tylsä',
+  titteli: 'Tylsä Harjoittelija',
+  kuvaus: 'Haukottelee radiopuhelimeen, nojailee ohjaussauvaan ja lentää ilman minkäänlaisia erikoistaitoja.',
+  avatar: '🥱',
+  harvinaisuus: 'tavallinen',
+  taso: 1,
+  maxTaso: 1,
+  hinta: 0,
+  valuutta: 'raha',
+  statit: {
+    nopeusBonus: 0,
+    kulutusAlennus: 0,
+    tuloBonus: 0,
+    kultaBonus: 0,
+    xpBonus: 0
+  },
+  koneId: null,
+  paivitysHinta: 0,
+  paivitysValuutta: 'raha'
+}
+
+export function haeKoneenPilotti(kone?: Lentokone | null, pilotit?: Pilotti[]): Pilotti {
+  if (kone && kone.pilottiId && Array.isArray(pilotit)) {
+    const p = pilotit.find(item => item.id === kone.pilottiId)
+    if (p) return p
+  }
+  return OLETUS_PILOTTI
+}
+
+export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: string[], pilotti?: Pilotti) => {
   if (reitti.length === 0) {
     return { matka: 0, aikaSekunteina: 0, tulot: 0, kulut: 0, voitto: 0, isBonus: false, arvioKulta: 0 }
   }
@@ -157,9 +188,19 @@ export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: 
     kokoMatka += haeEtaisyys(nykyinen, etappi)
     nykyinen = etappi
   }
-  const lentoAikaTunteina = kokoMatka / kone.nopeus 
-  const aikaSekunteina = Math.max(5, Math.round(lentoAikaTunteina * 80)) 
-  const kulut = Math.round((kone.kulutus * lentoAikaTunteina) * 2.0)
+
+  // Pilotin statit vaikuttavat lentoon
+  const nopeusBonus = pilotti?.statit?.nopeusBonus || 0
+  const kulutusAlennus = pilotti?.statit?.kulutusAlennus || 0
+  const tuloBonus = pilotti?.statit?.tuloBonus || 0
+  const kultaBonus = pilotti?.statit?.kultaBonus || 0
+
+  const tehokasNopeus = Math.max(10, Math.round(kone.nopeus * (1 + nopeusBonus / 100)))
+  const lentoAikaTunteina = kokoMatka / tehokasNopeus
+  const aikaSekunteina = Math.max(5, Math.round(lentoAikaTunteina * 80))
+
+  const tehokasKulutusKerroin = Math.max(0.2, 1 - (kulutusAlennus / 100))
+  const kulut = Math.round((kone.kulutus * tehokasKulutusKerroin * lentoAikaTunteina) * 2.0)
   
   let isBonus = false
   if (kone.matkustajaMaara > 1 && kone.matkustajatKyydissa.length === kone.matkustajaMaara) {
@@ -181,9 +222,18 @@ export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: 
     }
   }
 
+  // Pilotin tulobonus
+  if (tuloBonus > 0) {
+    tulot *= (1 + tuloBonus / 100)
+  }
+
   if (isBonus) {
     tulot *= 1.25
     kultaArvio *= 1.25 
+  }
+
+  if (kultaBonus > 0 && kultaArvio > 0) {
+    kultaArvio *= (1 + kultaBonus / 100)
   }
 
   const lopullisetTulot = Math.ceil(tulot)

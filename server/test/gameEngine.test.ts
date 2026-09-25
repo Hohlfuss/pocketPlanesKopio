@@ -290,3 +290,54 @@ test('Piippari: 4x4 ruudukon luonti, ruutujen avaaminen, palkinnot ja 24h jääh
   assert.ok(state.etsintaRuudut.every(r => !r.avattu), 'Kaikkien uusien ruutujen tulee olla avaamattomia')
 })
 
+test('Kohteen matkustajien ryhmälataus (load-destination-passengers) ja kultamatkustajien priorisointi', () => {
+  const state = luoAlkutila('test-batch-user', 'Kapteeni')
+  const kone = state.lentokoneet[0] // Piper Cub Pirkkalassa, kapasiteetti 2
+  kone.matkustajaMaara = 2
+  kone.matkustajatKyydissa = []
+
+  // Asetetaan kentälle 4 matkustajaa Tallinnaan ja 1 Helsinkiin
+  state.matkustajatKentilla[kone.sijainti] = [
+    { id: 'm1_tavallinen1', nimi: 'Matti Tavallinen', kohde: 'Tallinna', tuottaaKultaa: false },
+    { id: 'm2_kulta1', nimi: 'Kari Kultasormi', kohde: 'Tallinna', tuottaaKultaa: true, kultaMaara: 1 },
+    { id: 'm3_tavallinen2', nimi: 'Maija Tavallinen', kohde: 'Tallinna', tuottaaKultaa: false },
+    { id: 'm4_kulta2', nimi: 'Kuningas Kulta', kohde: 'Tallinna', tuottaaKultaa: true, kultaMaara: 3 },
+    { id: 'm5_helsinki', nimi: 'Heikki Helsinkiläinen', kohde: 'Helsinki', tuottaaKultaa: true, kultaMaara: 2 }
+  ]
+
+  // Koneeseen mahtuu 2 matkustajaa, mutta Tallinnaan on 4 odottajaa
+  // Kultamatkustajat (Kuningas Kulta 3 kultaa ja Kari Kultasormi 1 kulta) pitää priorisoida kyytiin!
+  const res = suoritaToiminto(state, 'load-destination-passengers', {
+    planeId: kone.id,
+    kohde: 'Tallinna'
+  })
+
+  assert.equal(res.success, true)
+  assert.equal(kone.matkustajatKyydissa.length, 2, 'Koneen tulisi tulla täyteen (2 paikkaa)')
+  
+  // Varmistetaan että kyydissä ovat molemmat kultamatkustajat korkeimman kultamäärän mukaan
+  assert.equal(kone.matkustajatKyydissa[0].id, 'm4_kulta2', 'Ensimmäisenä kyytiin parhaan kultatuoton matkustaja')
+  assert.equal(kone.matkustajatKyydissa[1].id, 'm2_kulta1', 'Toisena kyytiin toinen kultamatkustaja')
+
+  // Varmistetaan että tavalliset matkustajat ja toisen kohteen matkustaja jäivät kentälle
+  const jaljellaKentalla = state.matkustajatKentilla[kone.sijainti]
+  assert.equal(jaljellaKentalla.length, 3)
+  assert.ok(jaljellaKentalla.some(m => m.id === 'm1_tavallinen1'))
+  assert.ok(jaljellaKentalla.some(m => m.id === 'm3_tavallinen2'))
+  assert.ok(jaljellaKentalla.some(m => m.id === 'm5_helsinki'))
+
+  // Yritetään ladata lisää kun kone on täynnä
+  const resTaysi = suoritaToiminto(state, 'load-destination-passengers', {
+    planeId: kone.id,
+    kohde: 'Tallinna'
+  })
+  assert.equal(resTaysi.success, false, 'Täyteen koneeseen ei saa voida ladata matkustajia')
+
+  // Testataan olemattomaan kohteeseen lataus
+  const resOlematon = suoritaToiminto(state, 'load-destination-passengers', {
+    planeId: kone.id,
+    kohde: 'Kööpenhamina'
+  })
+  assert.equal(resOlematon.success, false)
+})
+

@@ -217,6 +217,15 @@ const lisaaMatkustaja = (matkustaja: Matkustaja, _indeksi?: number) => {
   }
 }
 
+const lisaaKaikkiKohteeseen = (kohde: string) => {
+  if (aktiivinenKone.value) {
+    suoritaPalvelinToiminto('load-destination-passengers', {
+      planeId: aktiivinenKone.value.id,
+      kohde
+    })
+  }
+}
+
 const poistaMatkustaja = (matkustaja: Matkustaja, _indeksi?: number) => {
   if (aktiivinenKone.value) {
     suoritaPalvelinToiminto('unload-passenger', { planeId: aktiivinenKone.value.id, passengerId: matkustaja.id })
@@ -443,6 +452,11 @@ const onkoValmisRakennettavaksi = (malliId: string) => {
   return tarvittavat.every(t => onkoOsaOmistuksessa(malliId, t))
 }
 
+const vapaatPaikat = computed(() => {
+  if (!aktiivinenKone.value) return 0
+  return Math.max(0, aktiivinenKone.value.matkustajaMaara - aktiivinenKone.value.matkustajatKyydissa.length)
+})
+
 const ryhmitellytMatkustajat = computed(() => {
   if (!valittuKentta.value) return []
   const kentta = valittuKentta.value
@@ -459,10 +473,18 @@ const ryhmitellytMatkustajat = computed(() => {
 
   const ryhmaTaulukko = Object.keys(ryhmat).map(kohde => {
     const etaisyys = haeEtaisyys(kentta, kohde)
+    // Lajitellaan matkustajat ryhmän sisällä: kultamatkustajat (ja korkeamman kultatuoton) ensin
+    const jasenet = [...ryhmat[kohde]].sort((a, b) => {
+      const aKulta = a.matkustaja.tuottaaKultaa ? (a.matkustaja.kultaMaara || 1) : 0
+      const bKulta = b.matkustaja.tuottaaKultaa ? (b.matkustaja.kultaMaara || 1) : 0
+      return bKulta - aKulta
+    })
+    const kultaMatkustajiaLkm = jasenet.filter(j => j.matkustaja.tuottaaKultaa).length
     return {
       kohde,
       etaisyys,
-      jasenet: ryhmat[kohde]
+      jasenet,
+      kultaMatkustajiaLkm
     }
   })
 
@@ -1343,7 +1365,21 @@ onUnmounted(() => {
         <div v-if="ryhmitellytMatkustajat.length > 0">
           <div v-for="ryhma in ryhmitellytMatkustajat" :key="ryhma.kohde" class="matkustaja-ryhma">
             <div class="ryhma-otsikko">
-              📍 {{ ryhma.kohde }} <span class="etaisyys-badge">({{ ryhma.etaisyys }} km)</span>
+              <div class="ryhma-kohde-tiedot">
+                📍 {{ ryhma.kohde }} <span class="etaisyys-badge">({{ ryhma.etaisyys }} km)</span>
+              </div>
+              <button 
+                class="lisaa-kaikki-ryhma-nappi"
+                :disabled="vapaatPaikat <= 0"
+                @click="lisaaKaikkiKohteeseen(ryhma.kohde)"
+                :title="vapaatPaikat <= 0 ? 'Kone on jo täynnä' : (vapaatPaikat < ryhma.jasenet.length ? `Tilaa vain ${vapaatPaikat} matkustajalle (${ryhma.jasenet.length} odottaa). Priorisoi kultamatkustajat!` : `Lisää kaikki ${ryhma.jasenet.length} matkustajaa koneeseen`)"
+              >
+                <span class="plus-merkki">➕</span>
+                <span>Ota kaikki ({{ ryhma.jasenet.length }})</span>
+                <span v-if="ryhma.kultaMatkustajiaLkm > 0" class="ryhma-kulta-badge" :title="`${ryhma.kultaMatkustajiaLkm} kultamatkustajaa`">
+                  🟡 {{ ryhma.kultaMatkustajiaLkm }}
+                </span>
+              </button>
             </div>
             <ul class="lista matkustaja-lista">
               <li v-for="item in ryhma.jasenet" :key="item.matkustaja.id" @click="lisaaMatkustaja(item.matkustaja, item.alkuperainenIndeksi)">
@@ -2280,6 +2316,60 @@ h2 {
   display: flex; 
   justify-content: space-between; 
   align-items: center; 
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ryhma-kohde-tiedot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lisaa-kaikki-ryhma-nappi {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  color: #ffffff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
+}
+
+.lisaa-kaikki-ryhma-nappi:hover:not(:disabled) {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(16, 185, 129, 0.35);
+}
+
+.lisaa-kaikki-ryhma-nappi:disabled {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+  color: #64748b;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+  opacity: 0.55;
+}
+
+.plus-merkki {
+  font-size: 0.72rem;
+}
+
+.ryhma-kulta-badge {
+  background: rgba(255, 213, 79, 0.25);
+  border: 1px solid rgba(255, 213, 79, 0.6);
+  color: #ffd54f;
+  font-size: 0.68rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 800;
 }
 
 .etaisyys-badge { font-size: 0.8rem; color: #94a3b8; font-weight: normal; }

@@ -764,6 +764,52 @@ export function suoritaToiminto(
       return { success: true, message: `${matkustaja.nimi} poistettu koneesta`, state }
     }
 
+    case 'load-destination-passengers': {
+      const { planeId, kohde } = payload || {}
+      const kone = state.lentokoneet.find(k => k.id === planeId)
+      if (!kone || kone.tila !== "Maassa") {
+        return { success: false, message: 'Kone ei ole maassa tai sitä ei löydy', state }
+      }
+      const vapaatPaikat = kone.matkustajaMaara - kone.matkustajatKyydissa.length
+      if (vapaatPaikat <= 0) {
+        return { success: false, message: 'Kone on jo täynnä', state }
+      }
+
+      const kenttaMatkustajat = state.matkustajatKentilla[kone.sijainti] || []
+      const kohteeseenMenevat = kenttaMatkustajat.filter(m => m.kohde === kohde)
+      if (kohteeseenMenevat.length === 0) {
+        return { success: false, message: `Ei odottavia matkustajia kohteeseen ${kohde}`, state }
+      }
+
+      // Priorisoidaan kultamatkustajat (tuottaaKultaa ja suurempi kultaMaara ensin)
+      const priorisoidut = [...kohteeseenMenevat].sort((a, b) => {
+        const aKulta = a.tuottaaKultaa ? (a.kultaMaara || 1) : 0
+        const bKulta = b.tuottaaKultaa ? (b.kultaMaara || 1) : 0
+        return bKulta - aKulta
+      })
+
+      // Otetaan enintään niin monta kuin vapaata tilaa koneessa on
+      const valitut = priorisoidut.slice(0, vapaatPaikat)
+      const valitutIdt = new Set(valitut.map(m => m.id))
+
+      // Poistetaan valitut kentältä
+      state.matkustajatKentilla[kone.sijainti] = kenttaMatkustajat.filter(m => !valitutIdt.has(m.id))
+
+      // Lisätään koneeseen
+      for (const matkustaja of valitut) {
+        matkustaja.lahtoKentta = kone.sijainti
+        kone.matkustajatKyydissa.push(matkustaja)
+      }
+
+      const kultaLkm = valitut.filter(m => m.tuottaaKultaa).length
+      const kultaInfo = kultaLkm > 0 ? ` (joista ${kultaLkm} kultamatkustajaa)` : ''
+      return {
+        success: true,
+        message: `${valitut.length} matkustajaa kohteeseen ${kohde} nousi koneeseen${kultaInfo}!`,
+        state
+      }
+    }
+
     case 'dispatch-plane': {
       const { planeId, route } = payload || {}
       const kone = state.lentokoneet.find(k => k.id === planeId)

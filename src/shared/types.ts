@@ -130,6 +130,7 @@ export type GameActionType =
   | 'buy-hangar-slot'
   | 'load-passenger'
   | 'unload-passenger'
+  | 'load-destination-passengers'
   | 'dispatch-plane'
   | 'avaa-etsinta-ruutu'
 

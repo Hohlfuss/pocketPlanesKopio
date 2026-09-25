@@ -78,3 +78,41 @@ test('Tulostaulu: pelaajan tiedot päivittyvät ja lajittelu toimii usealla sara
   assert.equal(lbTaso[2].userId, u1, 'Kolmantena tason 2 RikasRoope')
   assert.equal(lbTaso[2].taso, 2)
 })
+
+test('Tulostaulu: nimen metakoodaus ja purku toimii oikein', async () => {
+  const { encodeLeaderboardName, decodeLeaderboardName } = await import('../db/storage')
+
+  const originalName = 'SuperPilotti'
+  const encoded = encodeLeaderboardName(originalName, {
+    t: 12,
+    k: 7,
+    l: 150,
+    m: 420,
+    kt: 8
+  })
+
+  assert.equal(encoded, 'SuperPilotti #M:12,7,150,420,8')
+
+  const decoded = decodeLeaderboardName(encoded)
+  assert.equal(decoded.name, 'SuperPilotti')
+  assert.equal(decoded.stats?.taso, 12)
+  assert.equal(decoded.stats?.koneet, 7)
+  assert.equal(decoded.stats?.lennot, 150)
+  assert.equal(decoded.stats?.matkustajat, 420)
+  assert.equal(decoded.stats?.kentat, 8)
+
+  // Uudelleenkoodaus ei monista metatagia
+  const reEncoded = encodeLeaderboardName(encoded, {
+    t: 13,
+    k: 8,
+    l: 160,
+    m: 450,
+    kt: 9
+  })
+  assert.equal(reEncoded, 'SuperPilotti #M:13,8,160,450,9')
+
+  // Normaali nimi ilman metatietoja
+  const normal = decodeLeaderboardName('MattiLentäjä')
+  assert.equal(normal.name, 'MattiLentäjä')
+  assert.equal(normal.stats, undefined)
+})

@@ -240,13 +240,22 @@ const kirjauduUlos = async () => {
   router.push({ name: 'login' })
 }
 
+const puhdistaPelaajanNimi = (nimi?: string) => {
+  if (!nimi) return 'Pelaaja'
+  return nimi.replace(/\s*#M:.*$/, '').replace(/\s*#META#.*$/, '').trim() || 'Pelaaja'
+}
+
 const haeLeaderboard = async (naytaLataus = false) => {
   if (naytaLataus && leaderboardData.value.length === 0) {
     leaderboardLataus.value = true
   }
   try {
     const data = await fetchLeaderboard(leaderboardLajittelu.value)
-    leaderboardData.value = data
+    leaderboardData.value = (data || []).map((e: LeaderboardEntry) => ({
+      ...e,
+      pelaajanNimi: puhdistaPelaajanNimi(e.pelaajanNimi || e.pelaajan_nimi),
+      pelaajan_nimi: puhdistaPelaajanNimi(e.pelaajanNimi || e.pelaajan_nimi)
+    }))
   } catch (err: any) {
     console.error('Tulostaulun haku epäonnistui:', err)
   } finally {
@@ -1161,7 +1170,7 @@ onUnmounted(() => {
 
               <div class="pelaaja-tiedot">
                 <div class="pelaaja-otsikkorivi">
-                  <span class="lista-otsikko">{{ tulos.pelaajanNimi || tulos.pelaajan_nimi || 'Pelaaja' }}</span>
+                  <span class="lista-otsikko">{{ puhdistaPelaajanNimi(tulos.pelaajanNimi || tulos.pelaajan_nimi) }}</span>
                   <span class="taso-tagi">⭐ Taso {{ tulos.taso || 1 }}</span>
                   <span v-if="(tulos.userId || tulos.user_id) === kayttaja?.id" class="sina-tagi">Sinä</span>
                 </div>

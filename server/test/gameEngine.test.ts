@@ -434,4 +434,90 @@ test('Pilottijärjestelmä: oletuspilotti Timo Tylsä, rekrytointi, koneeseen as
   assert.ok(state.kaupanPilotit.length >= 2, 'Uusia pilotteja tulee generoitua refreshin yhteydessä')
 })
 
+test('Lentokoneen Masterointi: etäisyyspohjainen XP, 1-3 tähteä, kultainen status ja bonus', async () => {
+  const { luoAlkutila, suoritaToiminto, tickGameState } = await import('../game/gameEngine')
+  const { laskeKoneenMastery, MASTERY_THRESHOLDS } = await import('../game/gameData')
+
+  // 1. Laskurifunktion testaus
+  assert.equal(laskeKoneenMastery(0).stars, 0)
+  assert.equal(laskeKoneenMastery(0).isGolden, false)
+
+  assert.equal(laskeKoneenMastery(5000).stars, 1)
+  assert.equal(laskeKoneenMastery(5000).isGolden, false)
+
+  assert.equal(laskeKoneenMastery(15000).stars, 2)
+  assert.equal(laskeKoneenMastery(15000).isGolden, false)
+
+  assert.equal(laskeKoneenMastery(35000).stars, 3)
+  assert.equal(laskeKoneenMastery(35000).isGolden, true)
+
+  // 2. Pelitilan ja lennon simulaatio
+  const state = luoAlkutila('master-user', 'ÄssäLentäjä')
+  const kone = state.lentokoneet[0] // Pirkkalassa
+  assert.equal(kone.masteryXp || 0, 0)
+  assert.equal(kone.masteryStars || 0, 0)
+  assert.equal(kone.isGolden || false, false)
+
+  // Asetetaan matkustaja kohteeseen Helsinki
+  kone.matkustajatKyydissa = [{
+    id: 'm_master_1',
+    nimi: 'Matti Masteroija',
+    kohde: 'Helsinki',
+    lahtoKentta: 'Pirkkala',
+    tuottaaKultaa: false
+  }]
+
+  const now = Date.now()
+  const dispatchRes = suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Helsinki'] }, now)
+  assert.equal(dispatchRes.success, true)
+  assert.equal(kone.tila, 'Ilmassa')
+  const etaisyys = kone.currentLegDistance || 100
+  assert.ok(etaisyys > 0)
+
+  // Lento saapuu perille
+  tickGameState(state, kone.arrivalAt! + 100)
+  assert.equal(kone.tila, 'Maassa')
+  assert.equal(kone.masteryXp, Math.round(etaisyys), 'Koneen tulee saada etäisyyden verran masterointi-XP:tä')
+  assert.equal(kone.masteryStars, 0, 'Yksi lento ei vielä riitä 5000 km tähteen')
+
+  // Simuloidaan pitkäjänteinen masterointi: asetetaan XP juuri ennen 1. tähteä
+  kone.masteryXp = 4900
+  kone.matkustajatKyydissa = [{
+    id: 'm_master_2',
+    nimi: 'Pekka Lentäjä',
+    kohde: 'Pori',
+    lahtoKentta: kone.sijainti,
+    tuottaaKultaa: false
+  }]
+  suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Pori'] }, now + 1000)
+  tickGameState(state, kone.arrivalAt! + 100)
+  assert.ok(kone.masteryXp >= 5000)
+  assert.equal(kone.masteryStars, 1, 'Koneen tulee saavuttaa 1. tähti')
+  assert.equal(kone.isGolden, false)
+
+  // Simuloidaan 2. tähti
+  kone.masteryXp = 15000
+  const m2 = laskeKoneenMastery(kone.masteryXp)
+  assert.equal(m2.stars, 2)
+  assert.equal(m2.isGolden, false)
+
+  // Simuloidaan 3. tähti ja kultainen status
+  kone.masteryXp = 34950
+  kone.matkustajatKyydissa = [{
+    id: 'm_master_3',
+    nimi: 'Kulta Matkustaja',
+    kohde: 'Helsinki',
+    lahtoKentta: kone.sijainti,
+    tuottaaKultaa: false
+  }]
+  suoritaToiminto(state, 'dispatch-plane', { planeId: kone.id, route: ['Helsinki'] }, now + 2000)
+  const tulotEnnen = state.rahat
+  tickGameState(state, kone.arrivalAt! + 100)
+  
+  assert.ok(kone.masteryXp >= 35000)
+  assert.equal(kone.masteryStars, 3, 'Koneen tulee saavuttaa 3 tähteä')
+  assert.equal(kone.isGolden, true, 'Koneen tulee olla kultainen kun se saavuttaa 3 tähteä')
+})
+
+
 

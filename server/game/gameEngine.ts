@@ -26,7 +26,8 @@ import {
   tarvittavaXpTasonNostoon,
   laskeTasoPalkinto,
   OLETUS_PILOTTI,
-  haeKoneenPilotti
+  haeKoneenPilotti,
+  laskeKoneenMastery
 } from './gameData'
 
 interface PilottiMalli {
@@ -574,7 +575,10 @@ export function luoAlkutila(userId: string, username: string): GameState {
       onBonusLento: false,
       nopeusTaso: 0,
       kulutusTaso: 0,
-      tilavuusTaso: 0
+      tilavuusTaso: 0,
+      masteryXp: 0,
+      masteryStars: 0,
+      isGolden: false
     },
     {
       id: 2,
@@ -595,7 +599,10 @@ export function luoAlkutila(userId: string, username: string): GameState {
       onBonusLento: false,
       nopeusTaso: 0,
       kulutusTaso: 0,
-      tilavuusTaso: 0
+      tilavuusTaso: 0,
+      masteryXp: 0,
+      masteryStars: 0,
+      isGolden: false
     },
     {
       id: 3,
@@ -616,7 +623,10 @@ export function luoAlkutila(userId: string, username: string): GameState {
       onBonusLento: false,
       nopeusTaso: 0,
       kulutusTaso: 0,
-      tilavuusTaso: 0
+      tilavuusTaso: 0,
+      masteryXp: 0,
+      masteryStars: 0,
+      isGolden: false
     }
   ]
 
@@ -749,6 +759,7 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
           const lahto = m.lahtoKentta || saavuttuKentta
           let tulo = haeEtaisyys(lahto, m.kohde) * 0.35
           if (kone.onBonusLento) tulo *= 1.25
+          if (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) tulo *= 1.15
           if (pilotti.statit.tuloBonus > 0) tulo *= (1 + pilotti.statit.tuloBonus / 100)
           lennonTulot += Math.ceil(tulo)
           state.tilastot.kuljetutMatkustajat++
@@ -789,8 +800,24 @@ export function tickGameState(state: GameState, nowMs = Date.now()): { state: Ga
         tarvittava = tarvittavaXpTasonNostoon(state.taso)
       }
 
+      // Lentokoneen masterointi-XP lennon etäisyydestä (km)
+      const legDist = Math.max(10, Math.round(kone.currentLegDistance || 100))
+      const oldStars = kone.masteryStars || 0
+      kone.masteryXp = (kone.masteryXp || 0) + legDist
+      const masteryTiedot = laskeKoneenMastery(kone.masteryXp)
+      kone.masteryStars = masteryTiedot.stars
+      kone.isGolden = masteryTiedot.isGolden
+
+      if (oldStars < 1 && masteryTiedot.stars >= 1) {
+        events.push(`⭐ Lentokone ${kone.nimi} saavutti 1. Masterointitähden! (${kone.masteryXp.toLocaleString()} km)`)
+      } else if (oldStars < 2 && masteryTiedot.stars >= 2) {
+        events.push(`⭐⭐ Lentokone ${kone.nimi} saavutti 2. Masterointitähden! (${kone.masteryXp.toLocaleString()} km)`)
+      } else if (oldStars < 3 && masteryTiedot.stars >= 3) {
+        events.push(`👑✨ LENTOKONE MASTEROITU! ${kone.nimi} saavutti 3 tähteä ja muuttui KULTAISEKSI! (+15% tulobonus lennoilta) ✨👑`)
+      }
+
       events.push(
-        `Kone ${kone.nimi} (${pilotti.avatar} ${pilotti.nimi}) saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''} (+${lennonXp} XP).`
+        `Kone ${kone.nimi} (${pilotti.avatar} ${pilotti.nimi}) saapui kentälle ${saavuttuKentta}! Tuotto: +${lennonTulot} €${lennonKulta > 0 ? `, +${lennonKulta} kultaa` : ''} (+${lennonXp} XP, +${legDist} km kone-XP).`
       )
 
       // Siirrytään reitillä eteenpäin
@@ -996,7 +1023,10 @@ export function suoritaToiminto(
         onBonusLento: false,
         nopeusTaso: 0,
         kulutusTaso: 0,
-        tilavuusTaso: 0
+        tilavuusTaso: 0,
+        masteryXp: 0,
+        masteryStars: 0,
+        isGolden: false
       }
 
       state.lentokoneet.push(uusiKone)

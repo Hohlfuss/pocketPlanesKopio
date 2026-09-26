@@ -227,6 +227,11 @@ export const laskeReitinTiedot = (kone: Lentokone, lahtoKentta: string, reitti: 
     tulot *= (1 + tuloBonus / 100)
   }
 
+  // Kultaisen master-koneen +15% tuottobonus
+  if (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) {
+    tulot *= 1.15
+  }
+
   if (isBonus) {
     tulot *= 1.25
     kultaArvio *= 1.25 
@@ -252,3 +257,79 @@ export const tarvittavaXpTasonNostoon = (taso: number): number => {
 export const laskeTasoPalkinto = (uusiTaso: number): number => {
   return Math.max(2, Math.floor(1 + Math.max(1, uusiTaso) * 0.45))
 }
+
+// Masterointi-järjestelmä: Hyvin hidas pitkän aikavälin kehitys kullekin koneelle.
+// Koneet ansaitsevat lennon etäisyyden verran XP:tä (km).
+// 1. Tähti (⭐): 5 000 km XP
+// 2. Tähti (⭐⭐): 15 000 km XP
+// 3. Tähti (⭐⭐⭐): 35 000 km XP -> Masteroitu ja Kultainen!
+export const MASTERY_THRESHOLDS = [5000, 15000, 35000] as const
+
+export interface KoneMasteryTiedot {
+  stars: number // 0, 1, 2, 3
+  isGolden: boolean
+  totalXp: number
+  tierStartXp: number
+  tierTargetXp: number
+  progressPercent: number
+  label: string
+}
+
+export function laskeKoneenMastery(xp: number = 0): KoneMasteryTiedot {
+  const totalXp = Math.max(0, Math.round(xp))
+  
+  if (totalXp >= MASTERY_THRESHOLDS[2]) {
+    return {
+      stars: 3,
+      isGolden: true,
+      totalXp,
+      tierStartXp: MASTERY_THRESHOLDS[2],
+      tierTargetXp: MASTERY_THRESHOLDS[2],
+      progressPercent: 100,
+      label: 'Masteroitu (Kultainen ✨)'
+    }
+  }
+
+  if (totalXp >= MASTERY_THRESHOLDS[1]) {
+    const range = MASTERY_THRESHOLDS[2] - MASTERY_THRESHOLDS[1]
+    const current = totalXp - MASTERY_THRESHOLDS[1]
+    const progressPercent = Math.min(99, Math.floor((current / range) * 100))
+    return {
+      stars: 2,
+      isGolden: false,
+      totalXp,
+      tierStartXp: MASTERY_THRESHOLDS[1],
+      tierTargetXp: MASTERY_THRESHOLDS[2],
+      progressPercent,
+      label: '2 / 3 tähteä'
+    }
+  }
+
+  if (totalXp >= MASTERY_THRESHOLDS[0]) {
+    const range = MASTERY_THRESHOLDS[1] - MASTERY_THRESHOLDS[0]
+    const current = totalXp - MASTERY_THRESHOLDS[0]
+    const progressPercent = Math.min(99, Math.floor((current / range) * 100))
+    return {
+      stars: 1,
+      isGolden: false,
+      totalXp,
+      tierStartXp: MASTERY_THRESHOLDS[0],
+      tierTargetXp: MASTERY_THRESHOLDS[1],
+      progressPercent,
+      label: '1 / 3 tähteä'
+    }
+  }
+
+  const range = MASTERY_THRESHOLDS[0]
+  const progressPercent = Math.min(99, Math.floor((totalXp / range) * 100))
+  return {
+    stars: 0,
+    isGolden: false,
+    totalXp,
+    tierStartXp: 0,
+    tierTargetXp: MASTERY_THRESHOLDS[0],
+    progressPercent,
+    label: '0 / 3 tähteä'
+  }
+}
+

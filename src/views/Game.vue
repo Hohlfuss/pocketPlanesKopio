@@ -28,7 +28,8 @@ import {
   laskeReitinTiedot,
   tarvittavaXpTasonNostoon,
   OLETUS_PILOTTI,
-  haeKoneenPilotti
+  haeKoneenPilotti,
+  laskeKoneenMastery
 } from '../shared/gameData'
 
 const router = useRouter()
@@ -412,6 +413,10 @@ const suodatetutLentokoneet = computed(() => {
 const haeMallinNimi = (malliId: string) => {
   const m = rakennettavatMallit.find(rm => rm.malliId === malliId)
   return m ? m.nimi : (malliId || 'Tuntematon kone')
+}
+
+const haeKoneenMastery = (kone: Lentokone) => {
+  return laskeKoneenMastery(kone?.masteryXp || 0)
 }
 
 const siirryKoneeseen = (kone: Lentokone) => {
@@ -827,11 +832,21 @@ onUnmounted(() => {
           </div>
 
           <ul class="lista lennolla-lista">
-            <li v-for="kone in lennollaOlevat" :key="kone.id" class="lento-kortti">
+            <li 
+              v-for="kone in lennollaOlevat" 
+              :key="kone.id" 
+              class="lento-kortti"
+              :class="{ 'lento-kortti-kultainen': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }"
+            >
               <div class="lento-kortti-header">
                 <div class="lento-kone-nimi">
-                  <span class="kone-ikoni-animoitu">✈️</span>
+                  <span class="kone-ikoni-animoitu" :class="{ 'ikoni-kulta': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }">
+                    {{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? '👑' : '✈️' }}
+                  </span>
                   <span>{{ kone.nimi }}</span>
+                  <span v-if="kone.masteryStars && kone.masteryStars > 0" class="mastery-tahdet-mini" :class="{ 'tahdet-kulta': kone.isGolden || kone.masteryStars >= 3 }">
+                    {{ '⭐'.repeat(kone.masteryStars) }}
+                  </span>
                 </div>
                 <span class="lento-ajastin-badge">
                   ⏱️ {{ kone.lentoAikaJaljella }} s
@@ -845,7 +860,7 @@ onUnmounted(() => {
                   class="lento-lentava-kone" 
                   :style="{ left: Math.min(94, Math.max(3, laskeLennonEdistyminen(kone))) + '%' }"
                 >
-                  ✈️
+                  {{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? '👑' : '✈️' }}
                 </div>
               </div>
 
@@ -859,6 +874,7 @@ onUnmounted(() => {
                   <span class="lento-mini-chip">👥 {{ kone.matkustajatKyydissa.length }}/{{ kone.matkustajaMaara }} hlö</span>
                   <span class="lento-mini-chip">💨 {{ kone.nopeus }} km/h</span>
                   <span v-if="kone.onBonusLento" class="lento-mini-chip bonus">✨ +25%</span>
+                  <span v-if="kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)" class="lento-mini-chip kulta-master-chip" title="Kultainen master-kone: +15% lisätuotto">👑 +15%</span>
                 </div>
               </div>
             </li>
@@ -948,18 +964,32 @@ onUnmounted(() => {
           <div 
             v-for="kone in suodatetutLentokoneet" 
             :key="kone.id"
-            :class="['hangari-kone-kortti', { 'kortti-ilmassa': kone.tila === 'Ilmassa', 'kortti-maassa': kone.tila === 'Maassa' }]"
+            :class="['hangari-kone-kortti', { 
+              'kortti-ilmassa': kone.tila === 'Ilmassa', 
+              'kortti-maassa': kone.tila === 'Maassa',
+              'kortti-kultainen': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)
+            }]"
           >
             <!-- KORTIN YLÄOSA: Nimi, malli ja tilaindikaattori -->
             <div class="hangari-kone-yliosa">
               <div class="kone-tunniste-alue">
-                <span class="kone-tyyppi-ikoni">✈️</span>
+                <span class="kone-tyyppi-ikoni" :class="{ 'ikoni-kulta': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }">
+                  {{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? '👑' : '✈️' }}
+                </span>
                 <div>
                   <div class="kone-paa-otsikko">
                     <span class="kone-nimi">{{ kone.nimi }}</span>
                     <span class="kone-malli-badge">{{ haeMallinNimi(kone.malliId) }}</span>
+                    <span v-if="kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)" class="kulta-kruunu-badge">
+                      👑 KULTAINEN
+                    </span>
                   </div>
-                  <div class="kone-alaviite">Kone-ID #{{ kone.id }}</div>
+                  <div class="kone-alaviite">
+                    <span>Kone-ID #{{ kone.id }}</span>
+                    <span class="mastery-pieni-tahtirivi">
+                      {{ '⭐'.repeat(kone.masteryStars || 0) }}{{ '☆'.repeat(3 - (kone.masteryStars || 0)) }}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -973,6 +1003,47 @@ onUnmounted(() => {
                   <span class="vihrea-piste">●</span>
                   <span>Maassa: {{ kone.sijainti }}</span>
                 </div>
+              </div>
+            </div>
+
+            <!-- KONEEN MASTEROINTI-OSIO (Hidas ja arvokas kehitysjärjestelmä) -->
+            <div class="hangari-mastery-alue" :class="{ 'mastery-valmis': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }">
+              <div class="mastery-header-rivi">
+                <div class="mastery-otsikko-vasen">
+                  <span class="mastery-pokaali">{{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? '👑' : '⭐' }}</span>
+                  <span class="mastery-teksti-nimi">
+                    {{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? 'Masteroitu Lentokone' : `Masterointi: ${haeKoneenMastery(kone).label}` }}
+                  </span>
+                </div>
+                <div class="mastery-tahdet-pisteet">
+                  <span class="mastery-tahdet-display">
+                    <span v-for="s in 3" :key="s" :class="['mastery-tahti-pieni', { 'aktiivinen': s <= (kone.masteryStars || 0) }]">
+                      {{ s <= (kone.masteryStars || 0) ? '⭐' : '☆' }}
+                    </span>
+                  </span>
+                  <span class="mastery-km-arvo">{{ (kone.masteryXp || 0).toLocaleString() }} km XP</span>
+                </div>
+              </div>
+
+              <!-- Edistymispalkki -->
+              <div class="mastery-palkki-ura">
+                <div 
+                  class="mastery-palkki-tayte" 
+                  :class="{ 'kulta-tayte': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }"
+                  :style="{ width: haeKoneenMastery(kone).progressPercent + '%' }"
+                ></div>
+              </div>
+
+              <div class="mastery-alatiedot">
+                <span v-if="kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)" class="mastery-valmis-bonus">
+                  ✨ Kultainen status: +15% lipputulot kaikilta lennoilta!
+                </span>
+                <span v-else class="mastery-seuraava-taso">
+                  Seuraava tähti: {{ Math.max(0, haeKoneenMastery(kone).tierTargetXp - (kone.masteryXp || 0)).toLocaleString() }} km jäljellä ({{ haeKoneenMastery(kone).progressPercent }}%)
+                </span>
+                <span v-if="!(kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3))" class="mastery-tavoite-vihje">
+                  3 tähteä = Kultainen master-kone
+                </span>
               </div>
             </div>
 
@@ -1665,10 +1736,22 @@ onUnmounted(() => {
           <li 
             v-for="kone in haeKoneetKentalla(valittuKentta)" 
             :key="kone.id"
+            :class="{ 'kone-rivi-kultainen': kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3) }"
             @click="valitseKone(kone.id)"
           >
-            <div class="lista-otsikko">✈️ {{ kone.nimi }}</div>
-            <div class="lista-info">Kapasiteetti: {{ kone.matkustajaMaara }} hlö | Nopeus: {{ kone.nopeus }} km/h</div>
+            <div class="lista-otsikko">
+              <span>{{ (kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)) ? '👑' : '✈️' }} {{ kone.nimi }}</span>
+              <span v-if="kone.masteryStars && kone.masteryStars > 0" class="mastery-tahdet-mini">
+                {{ '⭐'.repeat(kone.masteryStars) }}
+              </span>
+              <span v-if="kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)" class="kulta-tagi-mini">
+                ✨ Kultainen Master
+              </span>
+            </div>
+            <div class="lista-info">
+              Kapasiteetti: {{ kone.matkustajaMaara }} hlö | Nopeus: {{ kone.nopeus }} km/h
+              <span v-if="kone.isGolden || (kone.masteryStars && kone.masteryStars >= 3)" class="kulta-teksti-pieni"> | 💰 +15% tuotto</span>
+            </div>
           </li>
         </ul>
       </div>
@@ -1677,9 +1760,55 @@ onUnmounted(() => {
       <div v-else-if="aktiivinenKone && valittuKentta" class="nakyma">
         
         <!-- KONEEN HEADER JA ROMUTUS -->
-        <div class="koneen-header">
-          <h1>{{ aktiivinenKone.nimi }}</h1>
+        <div class="koneen-header" :class="{ 'header-kultainen': aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3) }">
+          <div class="koneen-nimi-ja-kruunu">
+            <h1>{{ aktiivinenKone.nimi }}</h1>
+            <span v-if="aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3)" class="kulta-kruunu-badge">
+              👑 KULTAINEN MASTER-KONE
+            </span>
+          </div>
           <button class="romuta-nappi" @click="romutaKone()">🗑️ Myy romuksi (500 €)</button>
+        </div>
+
+        <!-- KONEEN MASTEROINTIPALKKI -->
+        <div class="aktiivinen-mastery-palkki" :class="{ 'mastery-kultainen-hehkua': aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3) }">
+          <div class="aktiivinen-mastery-sisus">
+            <div class="mastery-info-vasen">
+              <span class="mastery-paaikoni">{{ (aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3)) ? '👑' : '⭐' }}</span>
+              <div>
+                <div class="mastery-titteli-rivi">
+                  <span class="mastery-titteli">
+                    {{ (aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3)) ? 'Kultainen Master-Lentokone' : `Masterointi: ${haeKoneenMastery(aktiivinenKone).label}` }}
+                  </span>
+                  <span v-if="aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3)" class="kulta-etu-tagi">
+                    ✨ +15% lipputulot
+                  </span>
+                </div>
+                <div class="mastery-kilometrit-teksti">
+                  <span v-if="!(aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3))">
+                    {{ (aktiivinenKone.masteryXp || 0).toLocaleString() }} / {{ haeKoneenMastery(aktiivinenKone).tierTargetXp.toLocaleString() }} km lentokokemusta
+                  </span>
+                  <span v-else>
+                    {{ (aktiivinenKone.masteryXp || 0).toLocaleString() }} km lennetty — Kone on täysin masteroitu!
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mastery-tahdet-oikea">
+              <span v-for="t in 3" :key="t" class="mastery-tahti-iso" :class="{ 'tahti-loistaa': t <= (aktiivinenKone.masteryStars || 0) }">
+                {{ t <= (aktiivinenKone.masteryStars || 0) ? '⭐' : '☆' }}
+              </span>
+            </div>
+          </div>
+
+          <div class="mastery-kisko-aktiivinen">
+            <div 
+              class="mastery-tayte-aktiivinen"
+              :class="{ 'kulta-tayte-animoitu': aktiivinenKone.isGolden || (aktiivinenKone.masteryStars && aktiivinenKone.masteryStars >= 3) }"
+              :style="{ width: haeKoneenMastery(aktiivinenKone).progressPercent + '%' }"
+            ></div>
+          </div>
         </div>
 
         <!-- KONEEN PILOTTI -->
@@ -2611,6 +2740,331 @@ h2 {
   color: #ffd54f;
   border-color: rgba(255, 235, 59, 0.35);
   font-weight: 700;
+}
+
+/* ==========================================================================
+   KULTAINEN MASTER-LENTOKONE & MASTEROINTI-TYYLIT
+   ========================================================================== */
+.koneen-nimi-ja-kruunu {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kulta-kruunu-badge {
+  background: linear-gradient(135deg, #ffd700 0%, #ff8f00 100%);
+  color: #1a0f00;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+  text-transform: uppercase;
+}
+
+.kone-tyyppi-ikoni.ikoni-kulta,
+.kone-ikoni-animoitu.ikoni-kulta {
+  filter: drop-shadow(0 0 8px #ffd700);
+}
+
+.mastery-tahdet-mini {
+  font-size: 0.75rem;
+  margin-left: 6px;
+  letter-spacing: 1px;
+}
+
+.mastery-tahdet-mini.tahdet-kulta {
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.8));
+}
+
+.lento-kortti.lento-kortti-kultainen {
+  border: 1px solid #ffd700;
+  background: linear-gradient(135deg, rgba(42, 32, 12, 0.92) 0%, rgba(18, 26, 40, 0.92) 100%);
+  box-shadow: 0 4px 16px rgba(255, 215, 0, 0.2);
+}
+
+.lento-mini-chip.kulta-master-chip {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.45);
+  font-weight: 800;
+}
+
+.kone-rivi-kultainen {
+  border: 1px solid #ffd700 !important;
+  background: linear-gradient(135deg, rgba(45, 33, 10, 0.9) 0%, rgba(20, 28, 45, 0.9) 100%) !important;
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.2) !important;
+}
+
+.kulta-tagi-mini {
+  font-size: 0.7rem;
+  color: #ffd700;
+  font-weight: 800;
+  margin-left: 8px;
+}
+
+.kulta-teksti-pieni {
+  color: #ffd700;
+  font-weight: 700;
+}
+
+/* HANGARIN MASTEROINTI-ALUE */
+.hangari-kone-kortti.kortti-kultainen {
+  border: 2px solid #ffd700 !important;
+  border-left: 6px solid #ffd700 !important;
+  background: linear-gradient(135deg, rgba(38, 28, 10, 0.96) 0%, rgba(18, 26, 40, 0.96) 100%) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 22px rgba(255, 215, 0, 0.28) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+.hangari-kone-kortti.kortti-kultainen::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 215, 0, 0.12), transparent);
+  transform: skewX(-25deg);
+  animation: gold-shimmer 4.5s infinite;
+  pointer-events: none;
+}
+
+@keyframes gold-shimmer {
+  0% { left: -100%; }
+  30% { left: 200%; }
+  100% { left: 200%; }
+}
+
+.mastery-pieni-tahtirivi {
+  margin-left: 8px;
+  font-size: 0.75rem;
+  letter-spacing: 1px;
+}
+
+.hangari-mastery-alue {
+  background: rgba(8, 14, 24, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+
+.hangari-mastery-alue.mastery-valmis {
+  background: rgba(255, 215, 0, 0.08);
+  border-color: rgba(255, 215, 0, 0.35);
+  box-shadow: 0 0 14px rgba(255, 215, 0, 0.1);
+}
+
+.mastery-header-rivi {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mastery-otsikko-vasen {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mastery-pokaali {
+  font-size: 1.05rem;
+}
+
+.mastery-teksti-nimi {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #e2e8f0;
+}
+
+.mastery-valmis .mastery-teksti-nimi {
+  color: #ffd700;
+  font-weight: 800;
+}
+
+.mastery-tahdet-pisteet {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mastery-tahdet-display {
+  letter-spacing: 2px;
+  font-size: 0.8rem;
+}
+
+.mastery-tahti-pieni {
+  color: #64748b;
+}
+
+.mastery-tahti-pieni.aktiivinen {
+  color: #ffd700;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.6));
+}
+
+.mastery-km-arvo {
+  font-size: 0.74rem;
+  color: #94a3b8;
+  font-family: monospace;
+  font-weight: 600;
+}
+
+.mastery-palkki-ura {
+  width: 100%;
+  height: 7px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mastery-palkki-tayte {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+
+.mastery-palkki-tayte.kulta-tayte {
+  background: linear-gradient(90deg, #ffd700, #ff8f00);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+}
+
+.mastery-alatiedot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+  color: #94a3b8;
+}
+
+.mastery-valmis-bonus {
+  color: #ffd700;
+  font-weight: 800;
+}
+
+.mastery-seuraava-taso {
+  color: #cbd5e1;
+}
+
+.mastery-tavoite-vihje {
+  color: #64748b;
+  font-size: 0.68rem;
+}
+
+/* AKTIIVISEN KONEEN MASTEROINTIPALKKI */
+.header-kultainen h1 {
+  color: #ffd700 !important;
+  text-shadow: 0 0 12px rgba(255, 215, 0, 0.4);
+}
+
+.aktiivinen-mastery-palkki {
+  background: rgba(15, 23, 42, 0.75);
+  border: 1px solid rgba(0, 180, 255, 0.25);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.aktiivinen-mastery-palkki.mastery-kultainen-hehkua {
+  border: 2px solid #ffd700;
+  background: linear-gradient(135deg, rgba(42, 30, 10, 0.92) 0%, rgba(18, 26, 42, 0.92) 100%);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.aktiivinen-mastery-sisus {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.mastery-info-vasen {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mastery-paaikoni {
+  font-size: 1.8rem;
+}
+
+.mastery-titteli-rivi {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mastery-titteli {
+  font-weight: 800;
+  font-size: 0.96rem;
+  color: #e2e8f0;
+}
+
+.mastery-kultainen-hehkua .mastery-titteli {
+  color: #ffd700;
+}
+
+.kulta-etu-tagi {
+  background: rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.45);
+  font-weight: 800;
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 6px;
+}
+
+.mastery-kilometrit-teksti {
+  font-size: 0.76rem;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.mastery-tahdet-oikea {
+  display: flex;
+  gap: 4px;
+}
+
+.mastery-tahti-iso {
+  font-size: 1.3rem;
+  color: #475569;
+}
+
+.mastery-tahti-iso.tahti-loistaa {
+  color: #ffd700;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.7));
+}
+
+.mastery-kisko-aktiivinen {
+  width: 100%;
+  height: 8px;
+  background: rgba(10, 15, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.mastery-tayte-aktiivinen {
+  height: 100%;
+  background: linear-gradient(90deg, #38bdf8, #0ea5e9);
+  border-radius: 9999px;
+  transition: width 0.4s ease;
+}
+
+.mastery-tayte-aktiivinen.kulta-tayte-animoitu {
+  background: linear-gradient(90deg, #ffd700, #ff8f00);
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.7);
 }
 
 /* KONEEN HEADER JA ROMUTUS */

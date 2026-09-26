@@ -61,6 +61,9 @@ export interface Lentokone {
   tilavuusTaso: number
   currentLegDistance?: number
   pilottiId?: string | null
+  masteryXp?: number
+  masteryStars?: number
+  isGolden?: boolean
 }
 
 export interface KenttaData {

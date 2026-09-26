@@ -49,3 +49,45 @@ export async function fetchLeaderboard(sortBy: string = 'rahat') {
   const data = await res.json()
   return data.leaderboard || []
 }
+
+export interface ChatMessage {
+  id: string
+  userId?: string
+  sender: string
+  text: string
+  taso?: number
+  timestamp: number
+}
+
+export async function fetchChatMessages(): Promise<ChatMessage[]> {
+  try {
+    const res = await fetch('/api/chat/messages')
+    if (!res.ok) {
+      return []
+    }
+    const data = await res.json()
+    return data.messages || []
+  } catch (err) {
+    console.warn('Chat-viestien haku epäonnistui:', err)
+    return []
+  }
+}
+
+export async function sendChatMessage(text: string, sender: string, taso?: number, userId?: string): Promise<ChatMessage> {
+  const res = await fetch('/api/chat/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ text, sender, taso, userId })
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.error || 'Viestin lähetys epäonnistui')
+  }
+
+  const data = await res.json()
+  return data.message
+}
+

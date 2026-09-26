@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue"
 import { useRouter } from "vue-router"
 import { logout, getCurrentProfile } from '../lib/auth'
 import { fetchGameState, sendGameAction, fetchLeaderboard } from '../lib/api'
+import ChatWidget from '../components/ChatWidget.vue'
 import type {
   KenttaData,
   Lentokone,
@@ -1965,6 +1966,13 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- PELAAJACHAT-WIDGET -->
+    <ChatWidget
+      :current-username="pelaajanNimi || 'Lentäjä'"
+      :current-user-id="kayttaja?.id"
+      :player-level="taso"
+    />
 
     <!-- TAKAISIN-NAPPI -->
     <button v-if="valittuKentta || tyopajaAuki || kenttaKauppaAuki || tilastotAuki || etsintaAuki || hangariAuki || pilotitAuki" class="takaisin-nappi" @click="meneTaaksepain">✕</button>

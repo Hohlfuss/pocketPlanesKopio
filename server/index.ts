@@ -6,6 +6,7 @@ import fs from 'fs'
 import dotenv from 'dotenv'
 import { gameRouter } from './routes/gameRoutes'
 import { leaderboardRouter } from './routes/leaderboardRoutes'
+import { chatRouter } from './routes/chatRoutes'
 
 dotenv.config()
 
@@ -18,6 +19,7 @@ app.use(express.json())
 // API-reitit
 app.use('/api/game', gameRouter)
 app.use('/api/leaderboard', leaderboardRouter)
+app.use('/api/chat', chatRouter)
 
 // Health check Renderia varten
 app.get('/api/health', (_req, res) => {
